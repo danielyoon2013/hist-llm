@@ -13,30 +13,28 @@ Historical LLM training pipeline. Builds a domain-adapted language model from hi
 ```
 src/
 ├── base_training/                  # Stage 1: Continued pretraining data pipeline
-│   ├── additional_data/            # Additional news data preparation
-│   │   ├── Prepare_Additional_For_Embedding.ipynb   # Prep NYT/Economist/FT/Newswire for embedding
-│   │   └── Embed_Additional_Data.ipynb              # Embed additional data with BGE
-│   ├── analysis/
-│   │   ├── plot_cumulative_tokens.py    # Cumulative token graphs + cutoff scores
-│   │   └── Sanity_Check_Data.ipynb      # Data inspection/validation
-│   ├── classification/
-│   │   ├── check_and_classify.py        # Ridge-based quality classification (English + additional)
-│   │   └── Classify_Data.ipynb          # Interactive classification exploration
-│   ├── cleaning/
-│   │   ├── clean_data_helper.py         # Cleaning utilities
-│   │   └── Clean_Data.ipynb             # Data cleaning workflow
-│   ├── embeddings/
-│   │   ├── run_embeddings_fast.py       # Fast BGE embedding generation
+│   ├── cleaning/                   # Step 0: Heuristic text cleaning
+│   │   ├── clean_data_helper.py         # Cleaning utilities (compute_clean_mask)
+│   │   └── Clean_Data.ipynb             # Run cleaning on English + additional data
+│   ├── embeddings/                 # Step 0.5: BGE embedding generation
+│   │   ├── run_embeddings_fast.py       # Fast BGE embedding (English corpus)
 │   │   ├── reprocess_embeddings_years.py
 │   │   ├── Embed_Data.ipynb             # Original embedding notebook
-│   │   └── Embed_All_Data_Local.ipynb   # Full corpus embedding (local GPU)
-│   ├── preparation/
-│   │   ├── prepare_training_data.py     # Quality filtering + sharding (English + additional)
-│   │   └── Sample_Data.ipynb            # Sample docs for quality labeling
-│   └── quality/
-│       ├── train_ridge_models.py        # Train Ridge regressors per 25-year period
-│       ├── create_labeled_embeddings.py # Join GPT labels with BGE embeddings
-│       └── Label_Data.ipynb             # GPT-4o-mini quality labeling (Batch API)
+│   │   ├── Embed_All_Data_Local.ipynb   # Full corpus embedding (local GPU)
+│   │   ├── Prepare_Additional_For_Embedding.ipynb   # Prep additional data for embedding
+│   │   └── Embed_Additional_Data.ipynb              # Embed additional data with BGE
+│   ├── quality/                    # Steps 1–5: Full quality pipeline
+│   │   ├── Sample_Data.ipynb            # Step 1: Sample docs for labeling
+│   │   ├── Label_Data.ipynb             # Step 2: GPT-4o-mini quality labeling (Batch API)
+│   │   ├── create_labeled_embeddings.py # Step 3: Join GPT labels with BGE embeddings
+│   │   ├── train_ridge_models.py        # Step 4: Train Ridge regressors per 25-year period
+│   │   ├── check_and_classify.py        # Step 5: Apply Ridge to classify all documents
+│   │   └── Classify_Data.ipynb          # Interactive classification exploration
+│   ├── analysis/                   # Step 6: Cumulative token analysis
+│   │   ├── plot_cumulative_tokens.py    # Cumulative token graphs + cutoff scores
+│   │   └── Sanity_Check_Data.ipynb      # Data inspection/validation
+│   └── sharding/                   # Step 7: Final training data for nanochat
+│       └── prepare_training_data.py     # Quality filtering + sharding (English + additional)
 │
 ├── post_training/                  # Stage 2: Instruction tuning data pipeline
 │   ├── config.py                   # Central config (periods, paths, API keys)
@@ -133,23 +131,13 @@ D:\hist_LLM\
 The pipeline produces quality-filtered, sharded text data from ~146M documents across both the English historical corpus and 4 news collections.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        BASE TRAINING PIPELINE                           │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Raw Text ──► Cleaning ──► BGE Embeddings ──► Sample + Label ──► Ridge  │
-│  (corpus +    (Clean_Data   (run_embeddings    (Sample_Data.ipynb        │
-│  additional)   .ipynb)       _fast.py)          + Label_Data.ipynb       │
-│                                                  + create_labeled_       │
-│                                                    embeddings.py         │
-│                                                  + train_ridge_          │
-│                                                    models.py)            │
-│                                                                         │
-│  Ridge Models ──► Classification ──► Cumulative Analysis ──► Shards     │
-│                   (check_and_        (plot_cumulative_       (prepare_   │
-│                    classify.py)       tokens.py)              training   │
-│                                                               _data.py) │
-└──────────────────────────────────────────────────────────────────────────┘
+cleaning/        embeddings/       quality/                    analysis/       sharding/
+─────────        ───────────       ────────                    ─────────       ─────────
+Clean_Data  ──►  run_embeddings  ──►  Sample_Data.ipynb   ──►  plot_cumul.  ──►  prepare_
+ .ipynb          _fast.py              Label_Data.ipynb         tokens.py        training
+                                       create_labeled_emb.py                     _data.py
+                                       train_ridge_models.py
+                                       check_and_classify.py
 ```
 
 ### Step-by-step instructions
@@ -171,7 +159,7 @@ downstream steps.
 
 Sample ~10K documents per 25-year period from both English corpus and additional news data, proportionally by document count. Samples only from clean documents (uses masks from Step 0).
 
-**Notebook:** `base_training/preparation/Sample_Data.ipynb`
+**Notebook:** `base_training/quality/Sample_Data.ipynb`
 
 **Output:** `D:\hist_LLM\processing\sample_data\training_samples_{period}.parquet`
 
@@ -210,15 +198,15 @@ Apply Ridge models to predict quality scores for every embedded document.
 
 ```bash
 # Classify English corpus
-python src/base_training/classification/check_and_classify.py
-python src/base_training/classification/check_and_classify.py --reclassify  # overwrite existing
+python src/base_training/quality/check_and_classify.py
+python src/base_training/quality/check_and_classify.py --reclassify  # overwrite existing
 
 # Classify additional news data
-python src/base_training/classification/check_and_classify.py --additional
-python src/base_training/classification/check_and_classify.py --additional --collection nyt  # single collection
+python src/base_training/quality/check_and_classify.py --additional
+python src/base_training/quality/check_and_classify.py --additional --collection nyt  # single collection
 
 # Check status only
-python src/base_training/classification/check_and_classify.py --status
+python src/base_training/quality/check_and_classify.py --status
 ```
 
 **Output:**
@@ -242,9 +230,9 @@ python src/base_training/analysis/plot_cumulative_tokens.py
 Filter documents above the cutoff score, load raw text from both English and additional sources, shuffle, and write ~250M character shards.
 
 ```bash
-python src/base_training/preparation/prepare_training_data.py
-python src/base_training/preparation/prepare_training_data.py --period 1678_1849  # single period
-python src/base_training/preparation/prepare_training_data.py --dry-run           # stats only
+python src/base_training/sharding/prepare_training_data.py
+python src/base_training/sharding/prepare_training_data.py --period 1678_1849  # single period
+python src/base_training/sharding/prepare_training_data.py --dry-run           # stats only
 ```
 
 **Output:** `D:\hist_LLM\periods\{period}\base_data\shard_{NNNNN}.parquet`
