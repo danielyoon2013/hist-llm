@@ -28,8 +28,8 @@ from sklearn.metrics import mean_squared_error, r2_score
 from scipy.stats import pearsonr
 
 # --- CONFIG ---
-EMBEDDING_DIR = Path(r"D:\hist_LLM\Embedding_Data")
-MODEL_DIR = Path(r"D:\hist_LLM\Classify_Data\Models")
+EMBEDDING_DIR = Path(r"D:\hist_LLM\processing\labeled_embeddings")
+MODEL_DIR = Path(r"D:\hist_LLM\processing\quality_models")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 # Original 25-year periods

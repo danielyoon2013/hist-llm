@@ -40,11 +40,11 @@ def get_paths(period: str):
     assert period in PERIODS, f"Unknown period '{period}'. Choose from: {list(PERIODS.keys())}"
     start_year, end_year = PERIODS[period]
 
-    # Input data paths (D:/hist_LLM/periods_data/{period}/)
-    period_data = DATA_ROOT / "periods_data" / period
+    # Input data paths (D:/hist_LLM/periods/{period}/)
+    period_data = DATA_ROOT / "periods" / period
 
     # Model data paths (checkpoints, tokenizer, evals)
-    model_data = period_data / "model_data"
+    model_data = period_data / "model"
 
     return {
         # Period info
@@ -82,16 +82,16 @@ def get_paths(period: str):
         "eval_dir": model_data / "base_eval",
         "report_dir": model_data / "report",
 
-        # External data sources (D: drive)
-        "raw_data_root": Path("D:/English"),
-        "classified_root": Path("D:/English_Classified"),
+        # Main historical corpus (D:/hist_LLM/corpus/)
+        "raw_data_root": DATA_ROOT / "corpus" / "raw",
+        "classified_root": DATA_ROOT / "corpus" / "classified",
 
-        # Additional data sources
-        "additional_data_dir": DATA_ROOT / "additional_data",
-        "nyt_filtered_dir": DATA_ROOT / "additional_data" / "news_archives" / "NYT_filtered_500char",
-        "economist_dir": DATA_ROOT / "additional_data" / "news_archives" / "Economist",
-        "ft_dir": DATA_ROOT / "additional_data" / "news_archives" / "FT",
-        "newswire_dir": DATA_ROOT / "additional_data" / "newswire",
+        # Additional data sources (D:/hist_LLM/additional_data/raw/)
+        "additional_data_dir": DATA_ROOT / "additional_data" / "raw",
+        "nyt_filtered_dir": DATA_ROOT / "additional_data" / "raw" / "news_archives" / "NYT_filtered_500char",
+        "economist_dir": DATA_ROOT / "additional_data" / "raw" / "news_archives" / "Economist",
+        "ft_dir": DATA_ROOT / "additional_data" / "raw" / "news_archives" / "FT",
+        "newswire_dir": DATA_ROOT / "additional_data" / "raw" / "newswire",
     }
 
 # ---------------------------------------------------------------------------

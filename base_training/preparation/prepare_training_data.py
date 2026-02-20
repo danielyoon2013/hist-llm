@@ -38,11 +38,11 @@ import argparse
 import gc
 
 # --- CONFIG ---
-CLASSIFIED_DIR = Path(r"D:\English_Classified")
-RAW_DIR = Path(r"D:\English")
-CUTOFF_FILE = Path(r"D:\hist_LLM\Classify_Data\Graphs\period_summary.csv")
-OUTPUT_DIR = Path(r"D:\hist_LLM\periods_data")
-STAGING_DIR = Path(r"D:\base_data_staging")  # Local disk for temp files (avoids Dropbox sync bottleneck)
+CLASSIFIED_DIR = Path(r"D:\hist_LLM\corpus\classified")
+RAW_DIR = Path(r"D:\hist_LLM\corpus\raw")
+CUTOFF_FILE = Path(r"D:\hist_LLM\processing\quality_graphs\period_summary.csv")
+OUTPUT_DIR = Path(r"D:\hist_LLM\periods")
+STAGING_DIR = Path(r"D:\hist_LLM\processing\staging")
 
 # Target shard size (~250M characters)
 SHARD_SIZE_CHARS = 250_000_000

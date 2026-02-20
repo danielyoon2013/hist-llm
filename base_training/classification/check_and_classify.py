@@ -20,11 +20,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # --- CONFIG ---
-RAW_DIR = Path(r"D:\English")
-EMBEDDINGS_DIR = Path(r"D:\English_Results")
-MASKS_DIR = Path(r"D:\hist_LLM\Clean_Data\cleaning_masks")
-MODELS_DIR = Path(r"D:\hist_LLM\Classify_Data\Models")
-OUTPUT_DIR = Path(r"D:\English_Classified")
+RAW_DIR = Path(r"D:\hist_LLM\corpus\raw")
+EMBEDDINGS_DIR = Path(r"D:\hist_LLM\corpus\embeddings")
+MASKS_DIR = Path(r"D:\hist_LLM\processing\cleaning_masks")
+MODELS_DIR = Path(r"D:\hist_LLM\processing\quality_models")
+OUTPUT_DIR = Path(r"D:\hist_LLM\corpus\classified")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Original 25-year periods

@@ -17,8 +17,8 @@ import argparse
 from pathlib import Path
 
 # --- CONFIG ---
-LOCAL_DATA_DIR = Path(r"D:\English")
-LOCAL_RESULT_DIR = Path(r"D:\English_Results")
+LOCAL_DATA_DIR = Path(r"D:\hist_LLM\corpus\raw")
+LOCAL_RESULT_DIR = Path(r"D:\hist_LLM\corpus\embeddings")
 
 REMOTE_USER_IP = "ubuntu@129.146.2.145"
 REMOTE_INBOX_PATH = "/home/ubuntu/hist-llm-data/input_data/"
