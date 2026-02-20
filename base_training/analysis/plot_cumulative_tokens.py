@@ -1,11 +1,15 @@
 """
 Create cumulative token count graphs for analysis periods.
 
+Loads classified data from both the English corpus and additional news
+collections (NYT, Economist, FT, Newswire) to determine combined quality
+cutoff scores for each analysis period.
+
 Note: Classification uses 14 models (one per 25-year period).
       This script aggregates classified data into larger analysis periods.
 
 For each analysis period:
-1. Load all classified files for years in that period
+1. Load all classified files for years in that period (English + additional)
 2. Sort by predicted_quality (high to low)
 3. Calculate cumulative token count
 4. Plot with 20B threshold line
@@ -28,6 +32,9 @@ from tqdm import tqdm
 
 # --- CONFIG ---
 CLASSIFIED_DIR = Path(r"D:\hist_LLM\corpus\classified")
+ADDITIONAL_CLASSIFIED_DIR = Path(r"D:\hist_LLM\additional_data\classified")
+ADDITIONAL_COLLECTIONS = ["nyt", "economist", "ft", "newswire"]
+
 OUTPUT_DIR = Path(r"D:\hist_LLM\processing\quality_graphs")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -46,14 +53,30 @@ PERIOD_RANGES = [
 
 
 def load_period_data(start_year: int, end_year: int) -> pd.DataFrame:
-    """Load and combine all classified files for a period."""
+    """Load and combine all classified files for a period (English + additional)."""
     dfs = []
+
+    # English corpus
     for year in range(start_year, end_year + 1):
         path = CLASSIFIED_DIR / f"classified_{year}.parquet"
         if path.exists():
             df = pd.read_parquet(path)
             df['year'] = year
+            df['source'] = 'english'
             dfs.append(df)
+
+    # Additional collections
+    for collection in ADDITIONAL_COLLECTIONS:
+        coll_dir = ADDITIONAL_CLASSIFIED_DIR / collection
+        if not coll_dir.exists():
+            continue
+        for year in range(start_year, end_year + 1):
+            path = coll_dir / f"classified_{year}.parquet"
+            if path.exists():
+                df = pd.read_parquet(path)
+                df['year'] = year
+                df['source'] = collection
+                dfs.append(df)
 
     if not dfs:
         return None
@@ -101,7 +124,10 @@ def create_cumulative_plot(period_name: str, df: pd.DataFrame):
     # Add stats text
     total_tokens = df['token_count'].sum()
     total_docs = len(df)
+    english_docs = (df['source'] == 'english').sum() if 'source' in df.columns else total_docs
+    additional_docs = total_docs - english_docs
     stats_text = f'Total: {total_docs:,} docs, {total_tokens/1e9:.2f}B tokens'
+    stats_text += f'\nEnglish: {english_docs:,} | Additional: {additional_docs:,}'
     if cutoff_idx is not None:
         docs_above = cutoff_idx + 1
         stats_text += f'\nAbove 20B: {docs_above:,} docs ({100*docs_above/total_docs:.1f}%)'
@@ -115,6 +141,8 @@ def create_cumulative_plot(period_name: str, df: pd.DataFrame):
     return {
         'period': period_name,
         'total_docs': total_docs,
+        'english_docs': english_docs,
+        'additional_docs': additional_docs,
         'total_tokens': total_tokens,
         'cutoff_score': cutoff_score if cutoff_idx is not None else None,
         'docs_above_threshold': cutoff_idx + 1 if cutoff_idx is not None else total_docs
