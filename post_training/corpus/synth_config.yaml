@@ -1,0 +1,122 @@
+# Configuration for synthetic-data-kit with OpenAI API
+# Used for generating Q&A and CoT training data from corpus documents
+
+paths:
+  input: "input"
+  output:
+    parsed: "parsed"
+    generated: "generated"
+    curated: "curated"
+    final: "final"
+
+llm:
+  provider: "api-endpoint"
+
+api-endpoint:
+  api_base: "https://api.openai.com/v1"
+  api_key: "placeholder"  # Override via API_ENDPOINT_KEY env var
+  model: "gpt-4o-mini"
+  max_retries: 5
+  retry_delay: 1.0
+
+ingest:
+  default_format: "txt"
+
+generation:
+  temperature: 0.7
+  top_p: 0.95
+  processing_strategy: "auto"
+  single_call_max_size: 12000
+  chunk_size: 6000
+  overlap: 300
+  max_tokens: 4096
+  num_pairs: 3
+  num_cot_examples: 2
+  batch_size: 16
+  enable_deduplication: true
+  similarity_threshold: 0.8
+
+curate:
+  threshold: 7.0
+  batch_size: 5
+  inference_batch: 5
+  temperature: 0.1
+
+format:
+  default: "jsonl"
+  include_metadata: true
+  pretty_json: true
+
+prompts:
+  summary: |
+    Summarize this document in 3-5 sentences, focusing on the main topic and key concepts.
+
+  qa_generation: |
+    Create question-answer pairs from this text for LLM training.
+
+    Rules:
+    1. Questions must require analytical thinking, not just fact lookup
+    2. Answers must be directly supported by the text
+    3. Vary question types: cause-effect, comparison, analysis, inference, summary
+    4. Return JSON format only:
+
+    [
+      {{
+        "question": "Question 1?",
+        "answer": "Answer 1."
+      }},
+      {{
+        "question": "Question 2?",
+        "answer": "Answer 2."
+      }}
+    ]
+
+    Text:
+    {text}
+
+  qa_rating: |
+    Rate each question-answer pair on a scale from 1-10, based on:
+    - Accuracy (0-3): factual correctness
+    - Relevance (0-2): relevance to content
+    - Clarity (0-2): clear language
+    - Usefulness (0-3): value for model learning
+
+    YOU MUST RETURN A VALID JSON OBJECT OR ARRAY WITH THIS EXACT SCHEMA:
+    {{
+      "question": "Exact question text",
+      "answer": "Exact answer text",
+      "rating": 8
+    }}
+
+    OR FOR MULTIPLE PAIRS:
+    [
+      {{"question": "Q1", "answer": "A1", "rating": 8}},
+      {{"question": "Q2", "answer": "A2", "rating": 9}}
+    ]
+
+    *** YOUR RESPONSE MUST BE VALID JSON AND NOTHING ELSE - NO EXPLANATION, NO MARKDOWN ***
+
+    QA pairs to rate:
+    {pairs}
+
+  cot_generation: |
+    Create complex reasoning examples from this text that demonstrate
+    chain-of-thought thinking.
+
+    Each example should have:
+    1. A challenging question that requires step-by-step reasoning
+    2. Detailed reasoning steps that break down the problem
+    3. A concise final answer
+
+    Return JSON format only:
+
+    [
+      {{
+        "question": "Complex question about the text?",
+        "reasoning": "Step 1: First, I need to consider...\nStep 2: Then, I analyze...\nStep 3: Finally, I can conclude...",
+        "answer": "Final answer based on the reasoning."
+      }}
+    ]
+
+    Text:
+    {text}

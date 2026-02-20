@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Secrets
+key.txt
+
+# IDE
+.vscode/
+.idea/
