@@ -17,10 +17,10 @@ import argparse
 from pathlib import Path
 from datasets import load_dataset
 
-from src.post_training.config import PROJECT_ROOT
+from src.post_training.config import DATA_ROOT
 
 
-OUTPUT_DIR = PROJECT_ROOT / "data" / "instruct_data"
+OUTPUT_DIR = DATA_ROOT / "instruct_data"
 
 
 # ---------------------------------------------------------------------------

@@ -22,8 +22,8 @@ warnings.filterwarnings('ignore')
 # --- CONFIG ---
 RAW_DIR = Path(r"D:\English")
 EMBEDDINGS_DIR = Path(r"D:\English_Results")
-MASKS_DIR = Path(r"C:\Users\danielyoon\Dropbox\hist_LLM\Data\Clean_Data\cleaning_masks")
-MODELS_DIR = Path(r"C:\Users\danielyoon\Dropbox\hist_LLM\Data\Classify_Data\Models")
+MASKS_DIR = Path(r"D:\hist_LLM\Clean_Data\cleaning_masks")
+MODELS_DIR = Path(r"D:\hist_LLM\Classify_Data\Models")
 OUTPUT_DIR = Path(r"D:\English_Classified")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 

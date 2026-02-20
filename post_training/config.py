@@ -11,6 +11,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # hist_LLM/
+DATA_ROOT = Path("D:/hist_LLM")
 
 def load_api_key():
     key_path = PROJECT_ROOT / "key.txt"
@@ -39,8 +40,8 @@ def get_paths(period: str):
     assert period in PERIODS, f"Unknown period '{period}'. Choose from: {list(PERIODS.keys())}"
     start_year, end_year = PERIODS[period]
 
-    # Input data paths (data/periods_data/{period}/)
-    period_data = PROJECT_ROOT / "data" / "periods_data" / period
+    # Input data paths (D:/hist_LLM/periods_data/{period}/)
+    period_data = DATA_ROOT / "periods_data" / period
 
     # Model data paths (checkpoints, tokenizer, evals)
     model_data = period_data / "model_data"
@@ -70,7 +71,7 @@ def get_paths(period: str):
         "metadata_index": period_data / "posttraining_data" / "synthetic" / "document_metadata.parquet",
 
         # Shared instruct datasets (not period-specific)
-        "instruct_data_dir": PROJECT_ROOT / "data" / "instruct_data",
+        "instruct_data_dir": DATA_ROOT / "instruct_data",
 
         # Model data paths
         "model_data_dir": model_data,
@@ -86,11 +87,11 @@ def get_paths(period: str):
         "classified_root": Path("D:/English_Classified"),
 
         # Additional data sources
-        "additional_data_dir": PROJECT_ROOT / "Data" / "additional_data",
-        "nyt_filtered_dir": PROJECT_ROOT / "Data" / "additional_data" / "news_archives" / "NYT_filtered_500char",
-        "economist_dir": PROJECT_ROOT / "Data" / "additional_data" / "news_archives" / "Economist",
-        "ft_dir": PROJECT_ROOT / "Data" / "additional_data" / "news_archives" / "FT",
-        "newswire_dir": PROJECT_ROOT / "Data" / "additional_data" / "newswire",
+        "additional_data_dir": DATA_ROOT / "additional_data",
+        "nyt_filtered_dir": DATA_ROOT / "additional_data" / "news_archives" / "NYT_filtered_500char",
+        "economist_dir": DATA_ROOT / "additional_data" / "news_archives" / "Economist",
+        "ft_dir": DATA_ROOT / "additional_data" / "news_archives" / "FT",
+        "newswire_dir": DATA_ROOT / "additional_data" / "newswire",
     }
 
 # ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ from tqdm import tqdm
 
 # --- CONFIG ---
 CLASSIFIED_DIR = Path(r"D:\English_Classified")
-OUTPUT_DIR = Path(r"C:\Users\danielyoon\Dropbox\hist_LLM\Data\Classify_Data\Graphs")
+OUTPUT_DIR = Path(r"D:\hist_LLM\Classify_Data\Graphs")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 THRESHOLD = 20_000_000_000  # 20 billion tokens

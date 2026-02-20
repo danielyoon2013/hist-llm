@@ -16,12 +16,12 @@ import os
 import json
 import argparse
 
-from src.post_training.config import PERIODS, get_paths, PROJECT_ROOT
+from src.post_training.config import PERIODS, get_paths, DATA_ROOT
 from src.post_training.utils import read_jsonl, write_jsonl, download_batch_results
 from src.post_training.instruct.score import ALL_DATASETS
 
 
-INSTRUCT_DIR = PROJECT_ROOT / "data" / "instruct_data"
+INSTRUCT_DIR = DATA_ROOT / "instruct_data"
 
 
 # ---------------------------------------------------------------------------

@@ -40,8 +40,8 @@ import gc
 # --- CONFIG ---
 CLASSIFIED_DIR = Path(r"D:\English_Classified")
 RAW_DIR = Path(r"D:\English")
-CUTOFF_FILE = Path(r"C:\Users\danielyoon\Dropbox\hist_LLM\Data\Classify_Data\Graphs\period_summary.csv")
-OUTPUT_DIR = Path(r"C:\Users\danielyoon\Dropbox\hist_LLM\Data\periods_data")
+CUTOFF_FILE = Path(r"D:\hist_LLM\Classify_Data\Graphs\period_summary.csv")
+OUTPUT_DIR = Path(r"D:\hist_LLM\periods_data")
 STAGING_DIR = Path(r"D:\base_data_staging")  # Local disk for temp files (avoids Dropbox sync bottleneck)
 
 # Target shard size (~250M characters)

@@ -28,7 +28,7 @@ import json
 import argparse
 from pathlib import Path
 
-from src.post_training.config import PERIODS, get_paths, PROJECT_ROOT
+from src.post_training.config import PERIODS, get_paths, DATA_ROOT
 from src.post_training.utils import (
     call_openai_json, read_jsonl, write_jsonl,
     create_batch_request_file, submit_batch,
@@ -36,7 +36,7 @@ from src.post_training.utils import (
 )
 
 
-INSTRUCT_DIR = PROJECT_ROOT / "data" / "instruct_data"
+INSTRUCT_DIR = DATA_ROOT / "instruct_data"
 
 # External instruct datasets (GSM8K excluded — pure math, no temporal content)
 INSTRUCT_DATASETS = ["smoltalk", "mmlu", "arc_easy", "arc_challenge"]

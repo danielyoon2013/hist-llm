@@ -18,7 +18,7 @@ import argparse
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.post_training.config import PERIODS, get_paths, PROJECT_ROOT
+from src.post_training.config import PERIODS, get_paths, DATA_ROOT
 from src.post_training.utils import call_openai_json, count_jsonl
 from src.post_training.instruct.filter import (
     extract_text_for_classification,
@@ -26,7 +26,7 @@ from src.post_training.instruct.filter import (
 )
 
 
-INSTRUCT_DIR = PROJECT_ROOT / "data" / "instruct_data"
+INSTRUCT_DIR = DATA_ROOT / "instruct_data"
 DEFAULT_WORKERS = 16
 CHUNK_SIZE = 1000  # rows per processing chunk (for ordered writes + resume)
 
