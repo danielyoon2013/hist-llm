@@ -4,7 +4,7 @@ Prepare training data for nanochat by filtering high-quality documents.
 This script:
 1. Loads classified documents for each Option A period
 2. Filters documents above the quality cutoff threshold
-3. Joins with raw text from D:\\English\\
+3. Joins with raw text from D:\\hist_LLM\\corpus\\raw\\
 4. Shards data into ~250M character parquet files for nanochat
 
 Optimizations over original:
