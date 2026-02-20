@@ -80,6 +80,8 @@ D:\hist_LLM\
 ├── corpus/                         # English historical corpus (1678-2023)
 │   ├── raw/                        # Raw text by year
 │   │   └── {year}/subset_*.parquet     # Columns: identifier, text, token_count, word_count, ...
+│   ├── cleaning_masks/             # Heuristic cleaning masks by year
+│   │   └── {year}/{subset}_mask.parquet    # Columns: original_index (clean row indices)
 │   ├── embeddings/                 # BGE embeddings by year
 │   │   └── embeddings_{year}.parquet   # Columns: original_index, embedding (1024-dim)
 │   └── classified/                 # Quality predictions by year
@@ -92,6 +94,8 @@ D:\hist_LLM\
 │   │   │   ├── Economist/              economist_{year}-*.parquet  (1843-2014)
 │   │   │   └── FT/                     {year}.parquet              (1888-2006)
 │   │   └── newswire/                   {year}_data_clean.json      (1878-1977)
+│   ├── cleaning_masks/             # Heuristic cleaning masks by collection
+│   │   └── {collection}/{file}_mask.parquet
 │   ├── embeddings/
 │   │   └── {collection}/embeddings_{year}.parquet
 │   └── classified/
@@ -129,31 +133,43 @@ D:\hist_LLM\
 The pipeline produces quality-filtered, sharded text data from ~146M documents across both the English historical corpus and 4 news collections.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        BASE TRAINING PIPELINE                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                        │
-│  Raw Text ──► BGE Embeddings ──► Quality Labeling ──► Ridge Models     │
-│  (corpus +    (run_embeddings     (Sample_Data.ipynb    (train_ridge    │
-│  additional)   _fast.py)           + Label_Data.ipynb)   _models.py)   │
-│                                                                        │
-│                   ┌─────────────────────────────────────────────────┐   │
-│                   │  create_labeled_embeddings.py                   │   │
-│                   │  (joins GPT labels with BGE embeddings)         │   │
-│                   └─────────────────────────────────────────────────┘   │
-│                                                                        │
-│  Ridge Models ──► Classification ──► Cumulative Analysis ──► Shards    │
-│                   (check_and_        (plot_cumulative_       (prepare_  │
-│                    classify.py)       tokens.py)              training │
-│                                                               _data.py)│
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        BASE TRAINING PIPELINE                           │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  Raw Text ──► Cleaning ──► BGE Embeddings ──► Sample + Label ──► Ridge  │
+│  (corpus +    (Clean_Data   (run_embeddings    (Sample_Data.ipynb        │
+│  additional)   .ipynb)       _fast.py)          + Label_Data.ipynb       │
+│                                                  + create_labeled_       │
+│                                                    embeddings.py         │
+│                                                  + train_ridge_          │
+│                                                    models.py)            │
+│                                                                         │
+│  Ridge Models ──► Classification ──► Cumulative Analysis ──► Shards     │
+│                   (check_and_        (plot_cumulative_       (prepare_   │
+│                    classify.py)       tokens.py)              training   │
+│                                                               _data.py) │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Step-by-step instructions
 
+#### Step 0: Clean raw text (heuristic filtering)
+
+Apply three heuristic filters (symbol ratio, punctuation density, stopwords) to remove
+garbled OCR, tables/lists, and non-English text. Produces cleaning masks used by
+downstream steps.
+
+**Notebook:** `base_training/cleaning/Clean_Data.ipynb`
+**Helper:** `base_training/cleaning/clean_data_helper.py`
+
+**Output:**
+- English: `D:\hist_LLM\corpus\cleaning_masks\{year}\{subset}_mask.parquet`
+- Additional: `D:\hist_LLM\additional_data\cleaning_masks\{collection}\{file}_mask.parquet`
+
 #### Step 1: Sample documents for labeling
 
-Sample ~10K documents per 25-year period from both English corpus and additional news data, proportionally by document count.
+Sample ~10K documents per 25-year period from both English corpus and additional news data, proportionally by document count. Samples only from clean documents (uses masks from Step 0).
 
 **Notebook:** `base_training/preparation/Sample_Data.ipynb`
 
