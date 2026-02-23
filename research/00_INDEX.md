@@ -28,6 +28,8 @@
 | **Analysis periods** | The 6 time windows for model training: `1678_1849`, `1850_1899`, `1900_1949`, `1950_1999`, `2000_2009`, `2010_2023` |
 | **Quality periods** | 14 finer-grained 25-year windows for Ridge quality models |
 | **Generator A-H** | The 8 synthetic data generator types (see `03_SYNTHETIC_DATA_GENERATORS.md`) |
+| **Content x Format x Source** | The 3D matrix organizing synthetic data: content type (A-H) x question format (MC, CoT, T/F, etc.) x corpus source (News, Law, etc.) |
+| **Generator-Eval Alignment** | Mapping from each generator to the benchmarks it targets, enabling ablation studies |
 | **LAB filtering** | GPT-4o-mini classification of each example for post-period knowledge (see `filter.py`) |
 | **nanochat** | The training framework (Karpathy's nanoGPT lineage) — model, tokenizer, training scripts |
 
@@ -49,7 +51,8 @@
                     ┌───────────────────┴───────────────────┐
                     │                                       │
            BASE TRAINING                         SYNTHETIC DATA GENERATION
-        (continued pretraining)                (Generators A-H from corpus)
+        (continued pretraining)          (Content x Format x Source matrix)
+                    │                       (8 generators + GSM8K/MATH ext.)
                     │                                       │
                     │                              [Quality Pipeline]
                     │                          (dedup, LAB filter, decontam)

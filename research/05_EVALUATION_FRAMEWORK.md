@@ -18,6 +18,28 @@ We evaluate our models across three tiers, each serving a different purpose:
 
 Tier 3 is the most important and novel. A model that scores well on Tiers 1-2 but fails Tier 3 has lookahead bias — defeating the purpose of the project.
 
+### Generator-Evaluation Alignment
+
+Every evaluation benchmark is "served" by at least one synthetic data generator (see `03_SYNTHETIC_DATA_GENERATORS.md` Section 2). This alignment is by design — the generators were ideated to cover the evaluation space, and conversely, every generator has at least one benchmark that measures its impact.
+
+```
+                        Tier 1 (Core)              Tier 2 (Breadth)        Tier 3 (Diagnostic)
+                        MMLU  ARC-C  GSM8K  Hella  BoolQ  PIQA  Wino RACE  LAB  LAP  Temp Anti-H
+                                                   Swag                     Eval      Cons Diag
+Generator A (Factual)    **    **                   *                              .
+Generator B (Reasoning)         *                                           **
+Generator C (Comprehend)                             *                      **
+Generator D (Temporal)                                                            **   **   **
+Generator E (Quantitat)                **
+Generator F (Completion)                      **            *     *
+Generator G (Instruct)                                                      .
+Generator H (Anti-Hal)                                                            **         **   **
+GSM8K (external)                       **
+MATH (external)                        *
+```
+
+This enables clean **generator ablation studies**: remove a generator, measure which benchmarks degrade, and quantify each generator's marginal contribution. See `03_SYNTHETIC_DATA_GENERATORS.md` Section 2 for the full alignment matrix and `06_EXPERIMENT_PLAN.md` for the ablation design.
+
 ---
 
 ## 2. Tier 1: Core Capabilities
