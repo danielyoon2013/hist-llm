@@ -1,14 +1,13 @@
 """
-Check embedding/classification status and classify embeddings.
+Check embedding/classification status and classify English corpus embeddings.
 
-Supports both English corpus and additional news data (NYT, Economist, FT, Newswire).
-Cleaning masks are no longer required — all embedding rows are classified directly.
+Only classifies documents that pass heuristic cleaning masks (from Clean_Data.ipynb).
+This ensures garbled OCR, tables/lists, and non-English text are excluded before
+quality scoring.
 
 Usage:
-    python check_and_classify.py                    # Classify English corpus
+    python check_and_classify.py                    # Classify unclassified years
     python check_and_classify.py --status           # Only show status
-    python check_and_classify.py --additional       # Classify additional data
-    python check_and_classify.py --additional --collection nyt  # Single collection
     python check_and_classify.py --reclassify       # Reclassify all (overwrite existing)
 """
 
@@ -24,41 +23,10 @@ warnings.filterwarnings('ignore')
 # --- CONFIG ---
 RAW_DIR = Path(r"D:\hist_LLM\corpus\raw")
 EMBEDDINGS_DIR = Path(r"D:\hist_LLM\corpus\embeddings")
+MASKS_DIR = Path(r"D:\hist_LLM\corpus\cleaning_masks")
 MODELS_DIR = Path(r"D:\hist_LLM\processing\quality_models")
 OUTPUT_DIR = Path(r"D:\hist_LLM\corpus\classified")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Additional data config
-ADDITIONAL_EMB_DIR = Path(r"D:\hist_LLM\additional_data\embeddings")
-ADDITIONAL_RAW_DIR = Path(r"D:\hist_LLM\additional_data\raw")
-ADDITIONAL_CLASSIFIED_DIR = Path(r"D:\hist_LLM\additional_data\classified")
-
-ADDITIONAL_COLLECTIONS = {
-    "nyt": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "news_archives" / "NYT_filtered_500char",
-        "file_pattern": "nyt_{year}.parquet",
-        "text_col": "combined_text",
-        "id_col": "_id",
-    },
-    "economist": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "news_archives" / "Economist",
-        "file_pattern": "economist_{year}-*.parquet",
-        "text_col": "ocr_text",
-        "id_col": "article_id",
-    },
-    "ft": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "news_archives" / "FT",
-        "file_pattern": "{year}.parquet",
-        "text_col": "text_cleaned",
-        "id_col": "id",
-    },
-    "newswire": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "newswire",
-        "file_pattern": "{year}_data_clean.json",
-        "text_col": "cleaned_article",
-        "id_col": None,
-    },
-}
 
 # 25-year periods
 PERIODS = [
@@ -154,6 +122,34 @@ def load_models(period: str):
     return scaler, model
 
 
+def load_clean_indices(year: int) -> set:
+    """Load the set of clean original_index values from cleaning masks."""
+    mask_dir = MASKS_DIR / str(year)
+    if not mask_dir.exists():
+        return None
+
+    clean_indices = set()
+    for mask_path in mask_dir.glob("*_mask.parquet"):
+        # Mask files store row indices into the subset file.
+        # We need to map these back to original_index (identifier).
+        # The mask file name is {subset}_mask.parquet
+        subset_name = mask_path.stem.replace("_mask", "") + ".parquet"
+        raw_path = RAW_DIR / str(year) / subset_name
+        if not raw_path.exists():
+            continue
+
+        mask_df = pd.read_parquet(mask_path)
+        clean_rows = set(mask_df["original_index"].tolist())
+
+        # Read identifiers from raw file, pick only clean rows
+        raw_df = pd.read_parquet(raw_path, columns=["identifier"])
+        for row_idx in clean_rows:
+            if row_idx < len(raw_df):
+                clean_indices.add(str(raw_df.iloc[row_idx]["identifier"]))
+
+    return clean_indices
+
+
 def get_token_word_counts_english(year: int, identifiers: list) -> tuple:
     """Get token_count and word_count from English raw data."""
     raw_dir = RAW_DIR / str(year)
@@ -178,12 +174,23 @@ def get_token_word_counts_english(year: int, identifiers: list) -> tuple:
 
 
 def classify_year(year: int, scaler, model) -> pd.DataFrame:
-    """Classify all documents for a single year (English corpus, no cleaning masks)."""
+    """Classify clean documents for a single year.
+
+    Only classifies embedding rows whose original_index passes the cleaning mask.
+    """
     emb_path = EMBEDDINGS_DIR / f"embeddings_{year}.parquet"
     emb_df = pd.read_parquet(emb_path)
 
     if len(emb_df) == 0:
         return None
+
+    # Load cleaning mask and filter to clean rows only
+    clean_indices = load_clean_indices(year)
+    if clean_indices is not None:
+        total_before = len(emb_df)
+        emb_df = emb_df[emb_df['original_index'].astype(str).isin(clean_indices)]
+        if len(emb_df) == 0:
+            return None
 
     # Predict quality scores
     X = np.stack(emb_df['embedding'].values)
@@ -205,78 +212,8 @@ def classify_year(year: int, scaler, model) -> pd.DataFrame:
     return result_df
 
 
-def classify_additional_year(year: int, collection: str, scaler, model) -> pd.DataFrame:
-    """Classify all documents for a year in an additional data collection."""
-    emb_path = ADDITIONAL_EMB_DIR / collection / f"embeddings_{year}.parquet"
-    if not emb_path.exists():
-        return None
-
-    emb_df = pd.read_parquet(emb_path)
-    if len(emb_df) == 0:
-        return None
-
-    # Predict quality scores
-    X = np.stack(emb_df['embedding'].values)
-    X_scaled = scaler.transform(X)
-    predictions = model.predict(X_scaled)
-
-    identifiers = emb_df['original_index'].astype(str).tolist()
-
-    # Compute token/word counts from raw text
-    cfg = ADDITIONAL_COLLECTIONS[collection]
-    token_counts = {}
-    word_counts = {}
-
-    try:
-        if collection == "newswire":
-            import json
-            raw_path = cfg["raw_dir"] / f"{year}_data_clean.json"
-            if raw_path.exists():
-                with open(raw_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                for i, doc in enumerate(data):
-                    text = doc.get("cleaned_article", "")
-                    if text:
-                        idx = f"newswire_{year}_{i}"
-                        word_counts[idx] = len(text.split())
-                        token_counts[idx] = len(text) // 4
-        elif collection == "economist":
-            files = sorted(cfg["raw_dir"].glob(f"economist_{year}-*.parquet"))
-            for f in files:
-                raw_df = pd.read_parquet(f, columns=[cfg["id_col"], cfg["text_col"]])
-                for _, row in raw_df.iterrows():
-                    text = row[cfg["text_col"]]
-                    if text and str(text).strip():
-                        idx = str(row[cfg["id_col"]])
-                        word_counts[idx] = len(str(text).split())
-                        token_counts[idx] = len(str(text)) // 4
-        else:
-            pattern = cfg["file_pattern"].format(year=year)
-            raw_path = cfg["raw_dir"] / pattern
-            if raw_path.exists():
-                raw_df = pd.read_parquet(raw_path, columns=[cfg["id_col"], cfg["text_col"]])
-                for _, row in raw_df.iterrows():
-                    text = row[cfg["text_col"]]
-                    if text and str(text).strip():
-                        idx = str(row[cfg["id_col"]])
-                        word_counts[idx] = len(str(text).split())
-                        token_counts[idx] = len(str(text)) // 4
-    except Exception as e:
-        print(f"    [WARN] Could not load raw text for token counts: {e}")
-
-    result_df = pd.DataFrame({
-        'identifier': identifiers,
-        'predicted_quality': predictions,
-        'is_clean': True,
-        'token_count': [token_counts.get(str(i), None) for i in identifiers],
-        'word_count': [word_counts.get(str(i), None) for i in identifiers]
-    })
-
-    return result_df
-
-
 def classify_english(reclassify: bool = False):
-    """Classify English corpus embeddings."""
+    """Classify English corpus embeddings (clean rows only)."""
     status = get_status()
     print_status(status)
 
@@ -313,80 +250,9 @@ def classify_english(reclassify: bool = False):
                 result_df.to_parquet(output_path, index=False)
                 print(f"  {year}: {len(result_df):,} docs (mean: {result_df['predicted_quality'].mean():.2f})")
             else:
-                print(f"  [SKIP] {year}: No embeddings")
+                print(f"  [SKIP] {year}: No clean embeddings")
         except Exception as e:
             print(f"  [ERROR] {year}: {e}")
-
-    print("\nDone!")
-
-
-def classify_additional(collections: list = None, reclassify: bool = False):
-    """Classify additional data embeddings."""
-    if collections is None:
-        collections = list(ADDITIONAL_COLLECTIONS.keys())
-
-    model_cache = {}
-
-    for collection in collections:
-        coll_emb_dir = ADDITIONAL_EMB_DIR / collection
-        if not coll_emb_dir.exists():
-            print(f"[SKIP] No embeddings dir for {collection}")
-            continue
-
-        coll_output_dir = ADDITIONAL_CLASSIFIED_DIR / collection
-        coll_output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Find all years with embeddings
-        years = []
-        for f in coll_emb_dir.glob("embeddings_*.parquet"):
-            if "_temp_" in f.name:
-                continue
-            try:
-                year = int(f.stem.split('_')[1])
-                if collection == "newswire" and year == 1957:
-                    continue  # corrupted
-                years.append(year)
-            except:
-                pass
-        years.sort()
-
-        # Filter to unclassified if not reclassifying
-        if not reclassify:
-            existing = {int(f.stem.split('_')[1]) for f in coll_output_dir.glob("classified_*.parquet")}
-            years = [y for y in years if y not in existing]
-
-        if not years:
-            print(f"[SKIP] {collection}: nothing to classify")
-            continue
-
-        print(f"\n{'='*50}")
-        print(f"Classifying {collection}: {len(years)} years")
-        print(f"{'='*50}")
-
-        for year in years:
-            period = get_period_for_year(year)
-            if not period:
-                continue
-
-            if period not in model_cache:
-                try:
-                    model_cache[period] = load_models(period)
-                except Exception as e:
-                    print(f"  [ERROR] {year}: Could not load model for {period}: {e}")
-                    continue
-
-            scaler, model = model_cache[period]
-
-            try:
-                result_df = classify_additional_year(year, collection, scaler, model)
-                if result_df is not None:
-                    output_path = coll_output_dir / f"classified_{year}.parquet"
-                    result_df.to_parquet(output_path, index=False)
-                    print(f"  {year}: {len(result_df):,} docs (mean: {result_df['predicted_quality'].mean():.2f})")
-                else:
-                    print(f"  [SKIP] {year}: No data")
-            except Exception as e:
-                print(f"  [ERROR] {year}: {e}")
 
     print("\nDone!")
 
@@ -394,8 +260,6 @@ def classify_additional(collections: list = None, reclassify: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="Classify embeddings with Ridge quality models")
     parser.add_argument('--status', action='store_true', help='Only show status')
-    parser.add_argument('--additional', action='store_true', help='Classify additional data')
-    parser.add_argument('--collection', type=str, help='Specific additional collection (nyt/economist/ft/newswire)')
     parser.add_argument('--reclassify', action='store_true', help='Reclassify all (overwrite existing)')
     args = parser.parse_args()
 
@@ -404,11 +268,7 @@ def main():
         print_status(status)
         return
 
-    if args.additional:
-        collections = [args.collection] if args.collection else None
-        classify_additional(collections, reclassify=args.reclassify)
-    else:
-        classify_english(reclassify=args.reclassify)
+    classify_english(reclassify=args.reclassify)
 
 
 if __name__ == "__main__":
