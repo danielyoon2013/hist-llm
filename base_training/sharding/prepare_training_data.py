@@ -1,15 +1,13 @@
-"""
+r"""
 Prepare training data for nanochat by filtering high-quality documents.
 
 This script:
-1. Loads classified documents for each Option A period (English + additional)
-2. Filters documents above the quality cutoff threshold
-3. Joins with raw text from both English corpus and additional news data
+1. Loads classified documents for each analysis period
+2. Filters documents above the quality cutoff threshold (from period_summary.csv)
+3. Joins with raw text from the English corpus
 4. Shards data into ~250M character parquet files for nanochat
 
-Sources:
-    English:    D:\\hist_LLM\\corpus\\{classified,raw}\\
-    Additional: D:\\hist_LLM\\additional_data\\{classified,raw}\\{nyt,economist,ft,newswire}
+Source: D:\hist_LLM\corpus\{classified,raw}\
 
 Optimizations:
 - Parallel file reads within each year (16 workers, saturates SSD I/O)
@@ -17,13 +15,7 @@ Optimizations:
 - Two-pass reads (identifier column first, skip row groups with no matches)
 - PyArrow direct (no pandas DataFrame overhead for text loading)
 
-Output structure:
-    D:\\hist_LLM\\periods\\
-    ├── 1678_1849/
-    │   └── base_data/
-    │       ├── shard_00000.parquet
-    │       └── ...
-    └── ...
+Output: D:\hist_LLM\periods\{period}\base_data\shard_{NNNNN}.parquet
 
 Usage:
     python prepare_training_data.py                    # Prepare all periods
@@ -39,44 +31,11 @@ from pathlib import Path
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
 import argparse
-import json
 import gc
 
 # --- CONFIG ---
-# English corpus
 CLASSIFIED_DIR = Path(r"D:\hist_LLM\corpus\classified")
 RAW_DIR = Path(r"D:\hist_LLM\corpus\raw")
-
-# Additional news data
-ADDITIONAL_CLASSIFIED_DIR = Path(r"D:\hist_LLM\additional_data\classified")
-ADDITIONAL_RAW_DIR = Path(r"D:\hist_LLM\additional_data\raw")
-ADDITIONAL_COLLECTIONS = {
-    "nyt": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "news_archives" / "NYT_filtered_500char",
-        "file_pattern": "nyt_{year}.parquet",
-        "text_col": "combined_text",
-        "id_col": "_id",
-    },
-    "economist": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "news_archives" / "Economist",
-        "file_pattern": "economist_{year}-*.parquet",
-        "text_col": "ocr_text",
-        "id_col": "article_id",
-    },
-    "ft": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "news_archives" / "FT",
-        "file_pattern": "{year}.parquet",
-        "text_col": "text_cleaned",
-        "id_col": "id",
-    },
-    "newswire": {
-        "raw_dir": ADDITIONAL_RAW_DIR / "newswire",
-        "file_pattern": "{year}_data_clean.json",
-        "text_col": "cleaned_article",
-        "id_col": None,
-    },
-}
-
 CUTOFF_FILE = Path(r"D:\hist_LLM\processing\quality_graphs\period_summary.csv")
 OUTPUT_DIR = Path(r"D:\hist_LLM\periods")
 STAGING_DIR = Path(r"D:\hist_LLM\processing\staging")
@@ -89,7 +48,7 @@ ROW_GROUP_SIZE = 1024
 # Parallel file reads within each year (saturates NVMe SSD I/O queues)
 FILE_READ_WORKERS = 16
 
-# Option A periods
+# Analysis periods
 PERIOD_RANGES = [
     (1678, 1849, "1678_1849"),
     (1850, 1899, "1850_1899"),
@@ -106,44 +65,20 @@ def load_cutoff_scores() -> dict:
     return dict(zip(df['period'], df['cutoff_score']))
 
 
-def _load_classified_year(args):
-    """Load high-quality identifiers for a single year. Used by thread pool."""
-    year, cutoff, source = args
-    if source == "english":
+def get_high_quality_identifiers(start_year: int, end_year: int, cutoff: float) -> set:
+    """Get identifiers of documents above quality cutoff for a period."""
+    ids = set()
+
+    for year in tqdm(range(start_year, end_year + 1), desc="Loading classified", leave=False):
         classified_path = CLASSIFIED_DIR / f"classified_{year}.parquet"
-    else:
-        classified_path = ADDITIONAL_CLASSIFIED_DIR / source / f"classified_{year}.parquet"
-    if not classified_path.exists():
-        return source, []
-    df = pd.read_parquet(classified_path, columns=['identifier', 'predicted_quality'])
-    high_quality = df[df['predicted_quality'] >= cutoff]['identifier'].tolist()
-    del df
-    return source, high_quality
+        if not classified_path.exists():
+            continue
+        df = pd.read_parquet(classified_path, columns=['identifier', 'predicted_quality'])
+        high_quality = df[df['predicted_quality'] >= cutoff]['identifier'].tolist()
+        ids.update(high_quality)
+        del df
 
-
-def get_high_quality_identifiers(start_year: int, end_year: int, cutoff: float, workers: int = 8) -> tuple:
-    """Get identifiers of documents above quality cutoff for a period.
-
-    Returns (english_ids: set, additional_ids: dict[collection, set]).
-    """
-    english_ids = set()
-    additional_ids = {c: set() for c in ADDITIONAL_COLLECTIONS}
-
-    tasks = []
-    for y in range(start_year, end_year + 1):
-        tasks.append((y, cutoff, "english"))
-        for collection in ADDITIONAL_COLLECTIONS:
-            tasks.append((y, cutoff, collection))
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        for source, result in tqdm(executor.map(_load_classified_year, tasks),
-                                   total=len(tasks), desc="Loading classified", leave=False):
-            if source == "english":
-                english_ids.update(result)
-            else:
-                additional_ids[source].update(result)
-
-    return english_ids, additional_ids
+    return ids
 
 
 def _read_matching_texts(args):
@@ -194,79 +129,22 @@ def load_texts_for_year(year: int, valid_identifiers: set) -> list:
     return texts
 
 
-def load_additional_texts_for_year(year: int, collection: str, valid_ids: set) -> list:
-    """Load text from an additional data collection for a given year."""
-    if not valid_ids:
-        return []
-
-    cfg = ADDITIONAL_COLLECTIONS[collection]
-    texts = []
-
-    try:
-        if collection == "newswire":
-            raw_path = cfg["raw_dir"] / f"{year}_data_clean.json"
-            if not raw_path.exists():
-                return []
-            with open(raw_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            for i, doc in enumerate(data):
-                idx = f"newswire_{year}_{i}"
-                if idx in valid_ids:
-                    text = doc.get("cleaned_article", "")
-                    if text:
-                        texts.append(text)
-        elif collection == "economist":
-            files = sorted(cfg["raw_dir"].glob(f"economist_{year}-*.parquet"))
-            for fp in files:
-                df = pd.read_parquet(fp, columns=[cfg["id_col"], cfg["text_col"]])
-                for _, row in df.iterrows():
-                    if str(row[cfg["id_col"]]) in valid_ids:
-                        text = row[cfg["text_col"]]
-                        if text and str(text).strip():
-                            texts.append(str(text))
-                del df
-        else:
-            pattern = cfg["file_pattern"].format(year=year)
-            raw_path = cfg["raw_dir"] / pattern
-            if not raw_path.exists():
-                return []
-            df = pd.read_parquet(raw_path, columns=[cfg["id_col"], cfg["text_col"]])
-            for _, row in df.iterrows():
-                if str(row[cfg["id_col"]]) in valid_ids:
-                    text = row[cfg["text_col"]]
-                    if text and str(text).strip():
-                        texts.append(str(text))
-            del df
-    except Exception as e:
-        print(f"  [WARN] Error loading {collection}/{year}: {e}", flush=True)
-
-    return texts
-
-
 def prepare_period(start_year: int, end_year: int, period_name: str,
                    cutoff: float, dry_run: bool = False) -> dict:
-    """Prepare training data for a single period (English + additional)."""
+    """Prepare training data for a single period."""
     print(f"\n{'='*60}")
     print(f"Preparing {period_name} (cutoff={cutoff:.4f})")
     print(f"{'='*60}")
 
-    # Step 1: Get high-quality document identifiers from both sources
+    # Step 1: Get high-quality document identifiers
     print("Step 1: Finding high-quality documents...")
-    english_ids, additional_ids = get_high_quality_identifiers(start_year, end_year, cutoff)
-    total_additional = sum(len(v) for v in additional_ids.values())
-    print(f"  English: {len(english_ids):,} docs above cutoff")
-    for coll, ids in additional_ids.items():
-        if ids:
-            print(f"  {coll}: {len(ids):,} docs above cutoff")
-    total_above = len(english_ids) + total_additional
-    print(f"  Total: {total_above:,} documents above cutoff")
+    valid_ids = get_high_quality_identifiers(start_year, end_year, cutoff)
+    print(f"  {len(valid_ids):,} documents above cutoff")
 
     if dry_run:
         return {
             'period': period_name,
-            'docs_above_cutoff': total_above,
-            'english_docs': len(english_ids),
-            'additional_docs': total_additional,
+            'docs_above_cutoff': len(valid_ids),
             'shards': 0,
             'total_chars': 0
         }
@@ -286,15 +164,7 @@ def prepare_period(start_year: int, end_year: int, period_name: str,
     WRITE_CHUNK_SIZE = 50_000  # Write in chunks to avoid memory spikes during table creation
     # Sequential year processing: only 1 year's texts in memory at a time.
     for year in tqdm(range(start_year, end_year + 1), desc="Loading texts"):
-        # English corpus
-        texts = load_texts_for_year(year, english_ids)
-        # Additional collections
-        for collection in ADDITIONAL_COLLECTIONS:
-            coll_ids = additional_ids.get(collection, set())
-            if coll_ids:
-                add_texts = load_additional_texts_for_year(year, collection, coll_ids)
-                texts.extend(add_texts)
-                del add_texts
+        texts = load_texts_for_year(year, valid_ids)
 
         if texts:
             total_docs += len(texts)
@@ -356,9 +226,7 @@ def prepare_period(start_year: int, end_year: int, period_name: str,
 
     return {
         'period': period_name,
-        'docs_above_cutoff': total_above,
-        'english_docs': len(english_ids),
-        'additional_docs': total_additional,
+        'docs_above_cutoff': len(valid_ids),
         'docs_with_text': total_docs,
         'shards': shard_idx,
         'total_chars': total_chars
