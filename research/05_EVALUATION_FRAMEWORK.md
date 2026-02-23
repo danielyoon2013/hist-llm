@@ -18,6 +18,19 @@ We evaluate our models across three tiers, each serving a different purpose:
 
 Tier 3 is the most important and novel. A model that scores well on Tiers 1-2 but fails Tier 3 has lookahead bias — defeating the purpose of the project.
 
+### The Cross-Period Comparability Problem
+
+Standard benchmarks like MMLU are **unsuitable for fair cross-period comparison**. When we LAB-filter MMLU for each period, the number of surviving questions differs drastically (e.g., ~6K for 1678-1849 vs. ~15K for 2010-2023). Comparing accuracy on different-sized, differently-composed question sets is meaningless.
+
+**Solution — two evaluation categories:**
+
+| Category | Purpose | Benchmarks | Same across periods? |
+|----------|---------|------------|---------------------|
+| **Cross-period** | Apples-to-apples capability comparison | GSM8K, HellaSwag, PIQA, WinoGrande, Dyck, SpellingBee | Yes — these are temporally neutral |
+| **Period-specific** | Measure domain-specific capabilities | Our generator eval sets (5% holdout), LAB Eval (5K MC) | Yes — same volume per period, generated from our framework |
+
+MMLU and ARC are reported as **supplementary metrics** with full transparency about LAB filtering rates, not used for cross-period comparison.
+
 ### Generator-Evaluation Alignment
 
 Every evaluation benchmark is "served" by at least one synthetic data generator (see `03_SYNTHETIC_DATA_GENERATORS.md` Section 2). This alignment is by design — the generators were ideated to cover the evaluation space, and conversely, every generator has at least one benchmark that measures its impact.
