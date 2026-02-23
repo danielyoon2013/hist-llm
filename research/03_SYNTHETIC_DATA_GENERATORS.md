@@ -6,6 +6,27 @@
 
 ---
 
+## Table of Contents
+
+- [1. The Content x Format x Source Framework](#1-the-content-x-format-x-source-framework)
+  - [1a. Three Dimensions](#1a-three-dimensions-of-synthetic-data)
+  - [1b. Content x Format Matrix](#1b-the-content-x-format-matrix)
+  - [1c. Source Mapping](#1c-source-mapping-third-dimension)
+  - [1d. External Datasets Retained](#1d-external-datasets-retained)
+  - [1e. Benchmark Format Reference](#1e-benchmark-format-reference--our-output-format)
+- [2. Generator-to-Evaluation Alignment](#2-generator-to-evaluation-alignment)
+- [3. Existing Generators (A, B)](#3-existing-generators-implemented)
+- [4. Standard Generators (C, F, G)](#4-new-generators--standard-c-f-g)
+- [5. Priority Generators (D, E, H)](#5-priority-generators--implementation-ready-d-e-h)
+- [6. Volume Targets and Data Budget](#6-volume-targets-and-data-budget)
+- [7. Quality Control on Synthetic Data](#7-quality-control-on-synthetic-data)
+- [8. Prompt Engineering Principles](#8-prompt-engineering-principles)
+- [9. Implementation Plan](#9-implementation-plan)
+- [10. Evol-Instruct Complexity Scaling](#10-evol-instruct-complexity-scaling-post-generation)
+- [References](#references)
+
+---
+
 ## 1. The Content x Format x Source Framework
 
 ### 1a. Three Dimensions of Synthetic Data
@@ -100,6 +121,135 @@ Our corpus (news, law, books) rarely contains multi-step math in word-problem fo
 | Context | None (pure word problems) | Grounded in historical documents |
 | Temporal | Neutral (math doesn't change) | Period-specific (actual figures from that era) |
 | Capability tested | Abstract arithmetic | Domain-grounded quantitative reasoning |
+
+### 1e. Benchmark Format Reference / Our Output Format
+
+To validate that our generators produce training data matching the evaluation benchmarks, here is what each external benchmark looks like in nanochat format, alongside what our corresponding generator produces.
+
+All nanochat MC questions use `render_mc()` from `nanochat/tasks/common.py`:
+```
+Multiple Choice question: [QUESTION]
+- [choice text]=[letter]
+- [choice text]=[letter]
+...
+Respond only with the letter of the correct answer.
+```
+The letter comes AFTER the choice (better binding for small models). No whitespace before the letter (critical for tokenizer consistency).
+
+#### MMLU / ARC (Evaluation) vs. Generator A (Training)
+
+**MMLU eval format** (from `nanochat/tasks/mmlu.py`):
+```
+User:  Multiple Choice question: What was the primary cause of the Peloponnesian War?
+       - Athenian imperialism=A
+       - Spartan aggression=B
+       - Persian invasion=C
+       - Economic recession=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**Our Generator A output** (MC variant — training format):
+```json
+[
+  {"role": "user", "content": "Multiple Choice question: According to the passage, what was the primary consequence of the 1973 oil embargo?\n- Stagflation across Western economies=A\n- Collapse of the OPEC cartel=B\n- Rapid industrialization of oil-producing nations=C\n- Immediate shift to renewable energy sources=D\n\nRespond only with the letter of the correct answer."},
+  {"role": "assistant", "content": "A"}
+]
+```
+
+**Our Generator A output** (open-ended variant — existing format):
+```json
+[
+  {"role": "user", "content": "What rationale did the court provide for ruling that the jury's verdict should not be disturbed?"},
+  {"role": "assistant", "content": "The court reasoned that the jury's verdict was within the range of testimony provided by both parties..."}
+]
+```
+
+#### RACE / BoolQ (Evaluation) vs. Generator C (Training)
+
+**RACE eval format** (from `nanochat/tasks/race.py`):
+```
+User:  Multiple Choice question: Read the following passage and answer the question.
+
+       Passage: The oil embargo imposed by OAPEC in 1973 had far-reaching consequences...
+
+       What was the primary economic consequence of the 1973 oil embargo?
+       - Stagflation across Western economies=A
+       - Collapse of the OPEC cartel=B
+       - Rapid industrialization=C
+       - Shift to renewables=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**BoolQ eval format** (from `nanochat/tasks/boolq.py`):
+```
+User:  Multiple Choice question: Passage: The EEC was established by the Treaty of Rome in 1957...
+
+       Was the EEC established before 1960?
+       - No=A
+       - Yes=B
+
+       Respond only with the letter of the correct answer.
+Asst:  B
+```
+
+**Our Generator C output** (passage-based QA — training format):
+```json
+[
+  {"role": "user", "content": "Read the following passage and answer the question.\n\nPassage: The oil embargo imposed by OAPEC in 1973 had far-reaching consequences for Western economies. Crude oil prices quadrupled from $3 to $12 per barrel...\n\nQuestion: What was the primary economic consequence of the 1973 oil embargo according to the passage?"},
+  {"role": "assistant", "content": "According to the passage, the primary consequence was stagflation across Western economies, driven by the quadrupling of oil prices from $3 to $12 per barrel."}
+]
+```
+
+#### GSM8K (Evaluation) vs. Generator E (Training)
+
+**GSM8K eval format** (from `nanochat/tasks/gsm8k.py`):
+```
+User:  Janet's ducks lay 16 eggs per day. She eats three for breakfast and bakes
+       muffins with four. She sells the rest for $2 each. How much does she make daily?
+Asst:  Janet sells 16 - 3 - 4 = <<16-3-4=9>>9 duck eggs a day.
+       She makes 9 * 2 = <<9*2=18>>$18 every day.
+       #### 18
+```
+Note: GSM8K uses `<<expr=result>>` calculator tool calls and `#### answer` format.
+
+**Our Generator E output** (corpus-grounded quantitative — training format):
+```json
+[
+  {"role": "user", "content": "According to this 1957 trade report, Country X exported $240 million worth of goods. If exports grew by 8% annually, what was the approximate export value in 1962?"},
+  {"role": "assistant", "content": "<think>\nStep 1: We need compound growth over 5 years (1957 to 1962).\nStep 2: Formula: Final = Initial * (1 + rate)^years\nStep 3: Final = $240M * (1.08)^5 = $240M * 1.469 = $352.6M\n</think>\nThe approximate export value in 1962 was $352.6 million."}
+]
+```
+Key difference: GSM8K uses invented numbers; ours uses real historical figures from the corpus.
+
+#### HellaSwag (Evaluation) vs. Generator F (Training)
+
+**HellaSwag eval format** (from `nanochat/tasks/hellaswag.py`):
+```
+User:  Multiple Choice question: A woman is outside with a bucket. She pours water from the bucket...
+       - ...onto the car and begins scrubbing with a sponge=A
+       - ...into a lake nearby=B
+       - ...and drinks it quickly=C
+       - ...onto a fire to extinguish it=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**Our Generator F output** (sentence completion — training format):
+```json
+[
+  {"role": "user", "content": "Multiple Choice question: The following is the beginning of a passage from The Economist published in 1973:\n\"The decision to float the pound sterling marked a turning point in British economic policy. The immediate effect was...\"\n- a sharp depreciation against the dollar, dropping 10% within weeks=A\n- an unexpected strengthening as markets gained confidence=B\n- a return to the gold standard within six months=C\n- the adoption of the euro as Britain's primary currency=D\n\nRespond only with the letter of the correct answer."},
+  {"role": "assistant", "content": "A"}
+]
+```
+
+#### No External Equivalent vs. Generators D and H
+
+**Generator D** (Temporal Reasoning) and **Generator H** (Anti-Hallucination) have no direct external benchmark equivalents — they are unique to this project. See Sections 5 for full output examples.
 
 ---
 
@@ -813,29 +963,81 @@ Critical: avoid repetitive refusal templates. The prompt explicitly requests var
 
 ---
 
-## 6. Volume Targets and Mixing Ratios
+## 6. Volume Targets and Data Budget
 
-### Per-Period Targets
+### Current Data Inventory
 
-| Phase | Total Examples | Purpose |
-|-------|---------------|---------|
-| Mid-training | 500K-1M | Heavy on factual QA + reading comprehension |
-| SFT | 50K-100K | Heavy on CoT + instruction following (LIMA principle) |
+**External instruct datasets** (downloaded, from `instruct_dataset_summary_v2.csv`):
 
-### Mix Ratios
+| Dataset | Total | LAB Contamination | Post-Filter | Format |
+|---------|------:|------------------:|------------:|--------|
+| SmolTalk | 460,341 | 32.6% | 310,371 | Multi-turn conversation |
+| MMLU | 99,842 | 34.6% | 65,324 | MC (4 choices) |
+| HotpotQA | 90,447 | 56.6% | 39,227 | Open-ended multi-hop |
+| HellaSwag | 39,905 | 20.0% | 31,933 | Sentence completion MC |
+| MuSiQue | 19,938 | 41.4% | 11,679 | Open-ended + decomposition |
+| PIQA | 16,113 | 10.4% | 14,441 | Commonsense MC |
+| CodeContests | 13,134 | 40.8% | 7,779 | Code generation |
+| CommonsenseQA | 9,741 | 2.0% | 9,543 | MC (5 choices) |
+| WinoGrande | 9,248 | 3.0% | 8,973 | Fill-blank (2 choices) |
+| GSM8K | 7,473 | 2.5% | 7,285 | Math + step-by-step |
+| MATH | 7,500 | 0.3% | 7,477 | Math + LaTeX solution |
+| LogiQA | 7,376 | 41.4% | 4,319 | Logic MC |
+| ScienceQA | 5,837 | 2.2% | 5,706 | MC + explanation |
+| AIME/AMC | 4,069 | 0.6% | 4,043 | MC math + CoT |
+| StrategyQA | 2,290 | 31.4% | 1,571 | Yes/No + decomposition |
+| ARC-Easy | 2,251 | 1.7% | 2,213 | MC (4 choices) |
+| ARC-Challenge | 1,119 | 1.6% | 1,101 | MC (4 choices) |
+| FOLIO | 1,001 | 28.4% | 717 | T/F/Uncertain |
+| MBPP | 374 | 17.4% | 309 | Code generation |
+| HumanEval | 164 | 1.8% | 161 | Code generation |
+| **TOTAL** | **798,163** | — | **~534,171** | — |
 
-| Generator | Mid-Training % | SFT % | Rationale |
-|-----------|---------------|-------|-----------|
-| A. Factual MC | 30% | 15% | Core domain knowledge, high volume |
-| B. Chain-of-Thought | 15% | 25% | Reasoning capability, critical for SFT |
-| C. Reading Comprehension | 15% | 10% | Passage understanding |
-| D. Temporal Reasoning | 10% | 15% | **Unique differentiator** |
-| E. Quantitative | 5% | 5% | Corpus-grounded numbers (GSM8K external handles abstract math) |
-| F. Sentence Completion | 5% | 5% | Language modeling signal |
-| G. Instruction Following | 5% | 15% | Format learning (LIMA) |
-| H. Anti-Hallucination | 5% | 5% | **Temporal boundary enforcement** |
-| GSM8K (external) | 5% | 3% | Pure math reasoning |
-| MATH (external) | 5% | 2% | Advanced math reasoning |
+**Corpus-generated QA** (existing, 1950-1999 only):
+- 348,255 QA + CoT pairs from Generators A+B
+- 16 collections (Economist, NYT, FT, Newswire, Caselaw, USPTO, GATT, EurLex, Books, etc.)
+- Stored at `{period}/posttraining_data/hist_corpus_qa_{period}.jsonl`
+
+### Projected Volumes (Post New Generators)
+
+**Per-period generation targets:**
+
+| Phase | Target | Source |
+|-------|-------:|--------|
+| Mid-training | 500K | Generators A-H (corpus-derived) + GSM8K/MATH (external) |
+| SFT | 75K | Generators A-H (corpus-derived) + GSM8K/MATH (external) |
+| **Per-period total** | **575K** | |
+
+**Mix ratios and projected counts (per period):**
+
+| Generator | Mid % | Mid Count | SFT % | SFT Count | Total |
+|-----------|------:|----------:|------:|----------:|------:|
+| A. Factual | 30% | 150,000 | 15% | 11,250 | 161,250 |
+| B. Chain-of-Thought | 15% | 75,000 | 25% | 18,750 | 93,750 |
+| C. Reading Comprehension | 15% | 75,000 | 10% | 7,500 | 82,500 |
+| D. Temporal Reasoning | 10% | 50,000 | 15% | 11,250 | 61,250 |
+| E. Quantitative | 5% | 25,000 | 5% | 3,750 | 28,750 |
+| F. Sentence Completion | 5% | 25,000 | 5% | 3,750 | 28,750 |
+| G. Instruction Following | 5% | 25,000 | 15% | 11,250 | 36,250 |
+| H. Anti-Hallucination | 5% | 25,000 | 5% | 3,750 | 28,750 |
+| GSM8K (external) | 5% | 7,285 | 3% | 2,250 | 9,535 |
+| MATH (external) | 5% | 7,477 | 2% | 1,500 | 8,977 |
+| **Total** | | **~464K** | | **~75K** | **~539K** |
+
+Note: GSM8K/MATH are capped at their actual dataset size (7,285 and 7,477 after LAB filter).
+
+**Across all 6 periods:**
+
+| | Per Period | x 6 Periods | Notes |
+|---|----------:|------------:|-------|
+| Corpus-derived synthetic | ~525K | ~3.15M | New generation required |
+| External retained (GSM8K + MATH) | ~15K | ~90K | Same dataset, reused |
+| **Grand total** | **~540K** | **~3.24M** | |
+
+**API cost estimate:**
+- At ~$5 per 1,000 docs (GPT-4o-mini), ~$50-100 per 100K examples
+- Total: ~$1,500-3,000 across all 6 periods
+- Timeline: ~1-2 weeks of generation at 50 concurrent workers
 
 ### Source Diversity per Generator
 
@@ -849,7 +1051,57 @@ Critical: avoid repetitive refusal templates. The prompt explicitly requests var
 
 ---
 
-## 7. Prompt Engineering Principles
+## 7. Quality Control on Synthetic Data
+
+### Why Filter Your Own Generated Data?
+
+Even when using GPT-4-class models as generators, post-generation quality filtering is **strongly supported** by the academic literature. Every major synthetic data paper applies it:
+
+| Paper | What They Did | Filter Rate | Impact |
+|-------|--------------|-------------|--------|
+| **AlpaGasus** (arXiv:2307.08701) | ChatGPT Likert scoring on Alpaca 52K | 83% filtered | Outperforms full Alpaca; 5.7x faster training |
+| **Superfiltering** (arXiv:2402.00530) | IFD scoring on Alpaca 52K | 85-95% filtered | Matches full-data performance at 5-15% of data |
+| **Source2Synth** (arXiv:2409.08239) | Answerability check on generated QA | 13-73% filtered | +8-10 accuracy points |
+| **Cosmopedia** (HuggingFace, 2024) | Topic scoring + MinHash dedup + n-gram decontam | 23% clusters dropped | 25B clean tokens from 30M docs |
+| **Self-Instruct** (arXiv:2212.10560) | ROUGE-L dedup + heuristic filters | ~40% filtered | 52K clean from larger pool |
+| **WizardLM** (arXiv:2304.12244) | Evolution failure filter | Varies | Removes echoed/refused outputs |
+| **Alpaca** (Stanford, no filter) | **None** | 0% | Community found major quality issues |
+
+**Key finding:** Aggressive quality filtering (keeping 5-17% of synthetic data) consistently **outperforms or matches** training on the full unfiltered set.
+
+### What Goes Wrong Without Filtering?
+
+Even with GPT-4o-mini generating from grounded corpus text, these issues appear:
+
+1. **Malformed JSON** — GPT-4o-mini is more error-prone than GPT-4 on structured output
+2. **Self-referential responses** — "As an AI assistant, I can tell you that..."
+3. **Near-duplicates** — Multiple QA pairs from the same document often paraphrase each other
+4. **Parametric knowledge injection** — GPT-4o-mini's own knowledge leaking into answers beyond what the source document contains (Sarkar & Vafa, SSRN:4754678)
+5. **Trivial questions** — Yes/no or single-word answers with no training signal
+6. **Unanswerable questions** — Questions that cannot be answered from the source passage
+
+### Our Quality Pipeline (6 stages)
+
+For **external datasets** (GSM8K, MATH): LAB temporal filter only (already implemented in `filter.py`).
+
+For **our synthetic data** (Generators A-H):
+
+| Stage | What | Why | Tool |
+|-------|------|-----|------|
+| 1. Format validation | Parse JSON, check required fields, reject malformed | GPT-4o-mini ~5-10% malformed rate | Script |
+| 2. Self-referential filter | Remove "As an AI...", "I cannot...", short refusals | Known GPT-4o-mini behavior | Regex |
+| 3. Deduplication | MinHash LSH or ROUGE-L >= 0.7 on questions | LLMs produce near-identical questions per doc | MinHash |
+| 4. Grounding verification | Check answer entities/dates/claims appear in source passage | Replaces LAB; catches parametric injection | Model-based |
+| 5. N-gram decontamination | 10-gram overlap against eval sets | Prevents inflated eval scores | `difflib` |
+| 6. Trivial question filter | Remove answers <5 tokens, yes/no without justification | No training signal | Heuristic |
+
+**Expected filter rates:** Based on Source2Synth and AlpaGasus, expect 15-30% of generated data to be filtered. This is built into the volume targets above (we generate ~540K to end up with ~400K+ clean examples per period).
+
+Full pipeline details: see `04_QUALITY_CONTROL_PIPELINE.md`.
+
+---
+
+## 8. Prompt Engineering Principles
 
 ### Shared Across All Generators
 
@@ -870,7 +1122,7 @@ Critical: avoid repetitive refusal templates. The prompt explicitly requests var
 
 ---
 
-## 8. Implementation Plan
+## 9. Implementation Plan
 
 ### Phase 1: Extend Existing Infrastructure (C, G + format variants for A, B)
 
@@ -928,7 +1180,7 @@ Phase 1 and Phase 2 can run in parallel. Phase 4 requires all generation to be c
 
 ---
 
-## 9. Evol-Instruct Complexity Scaling (Post-Generation)
+## 10. Evol-Instruct Complexity Scaling (Post-Generation)
 
 After initial generation, apply Evol-Instruct techniques (Xu et al., arXiv:2304.12244) to increase difficulty on 10-20% of generated data:
 

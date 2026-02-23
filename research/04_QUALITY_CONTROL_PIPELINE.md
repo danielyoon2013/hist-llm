@@ -43,6 +43,35 @@ Final Training Data
 - Stage 2: Partially implemented (threshold defined in `synth_config.yaml`)
 - Stages 4, 5, 6: Proposed (design specified below)
 
+### Why Quality Control on Our Own Synthetic Data?
+
+Even when generating from our own corpus with GPT-4o-mini, quality filtering is essential. The academic evidence is consistent:
+
+| Paper | Filter Rate | Impact |
+|-------|-------------|--------|
+| **AlpaGasus** (arXiv:2307.08701) | 83% of Alpaca 52K filtered via ChatGPT scoring | Outperforms full Alpaca; 5.7x faster training |
+| **Superfiltering** (arXiv:2402.00530) | 85-95% filtered via IFD scoring | Matches full-data performance at 5-15% of data |
+| **Source2Synth** (arXiv:2409.08239) | 13-73% filtered via answerability check | +8-10 accuracy points over unfiltered |
+| **Cosmopedia** (HuggingFace, 2024) | 23% topic clusters + MinHash dedup + n-gram decontam | Clean 25B tokens from 30M docs |
+| **Self-Instruct** (arXiv:2212.10560) | ROUGE-L dedup + heuristic filters | ~40% filtered from generation pool |
+| **Alpaca** (Stanford, **no filter**) | 0% filtered | Community found major quality issues (AlpacaDataCleaned) |
+| **LIMA** (arXiv:2305.11206) | Intensive manual curation of 1K examples | Outperforms RLHF-trained models on more data |
+
+**Key pattern:** Aggressive quality filtering (keeping 5-17%) consistently outperforms or matches training on the full unfiltered set, while reducing compute cost 5-7x.
+
+### Two Pipelines: External vs. Corpus-Generated
+
+Quality control serves **different purposes** depending on data source:
+
+| | External Datasets (GSM8K, MATH) | Our Synthetic Data (Generators A-H) |
+|---|---|---|
+| **Primary risk** | Temporal contamination (post-period knowledge) | Parametric injection (GPT-4o-mini's knowledge leaking beyond source text) |
+| **Key filter** | LAB temporal filter (`filter.py`) | Grounding verification (answer entailed by source passage) |
+| **Other risks** | Anachronistic content | Malformed JSON, near-duplicates, trivial questions, self-referential responses |
+| **Implementation** | Already implemented (Batch API) | Stages 1-2 implemented; 4-6 proposed |
+
+For our synthetic data, we do NOT need LAB filtering (the data is generated from period-specific corpus). Instead, we need **grounding verification**: checking that answers are supported by the source passage and not injected from GPT-4o-mini's parametric knowledge (Sarkar & Vafa, SSRN:4754678).
+
 ---
 
 ## 2. Stage 1: Format Validation
