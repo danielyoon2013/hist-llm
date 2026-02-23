@@ -1,10 +1,10 @@
 # hist-LLM
 
-Historical LLM training pipeline. Builds a domain-adapted language model from historical document corpora spanning 1678-2023.
+Historical LLM training pipeline. Builds a domain-adapted language model from the English historical corpus spanning 1678-2023 (~125M documents).
 
 **Two-stage training:**
-1. **Base training** (continued pretraining) — Quality-filtered raw text from English historical corpus + curated news archives
-2. **Post-training** (instruction tuning) — Synthetic QA/CoT data generated from the same corpora, filtered and split for fine-tuning via [nanochat](https://github.com/your-org/nanochat)
+1. **Base training** (continued pretraining) — Quality-filtered raw text from the English historical corpus
+2. **Post-training** (instruction tuning) — Synthetic QA/CoT data generated from the same corpus, filtered and split for fine-tuning via nanochat
 
 ---
 
@@ -15,26 +15,24 @@ src/
 ├── base_training/                  # Stage 1: Continued pretraining data pipeline
 │   ├── cleaning/                   # Step 0: Heuristic text cleaning
 │   │   ├── clean_data_helper.py         # Cleaning utilities (compute_clean_mask)
-│   │   └── Clean_Data.ipynb             # Run cleaning on English + additional data
+│   │   └── Clean_Data.ipynb             # Run cleaning on raw corpus
 │   ├── embeddings/                 # Step 0.5: BGE embedding generation
-│   │   ├── run_embeddings_fast.py       # Fast BGE embedding (English corpus)
-│   │   ├── reprocess_embeddings_years.py
+│   │   ├── run_embeddings_fast.py       # Fast BGE embedding (GPU)
+│   │   ├── reprocess_embeddings_years.py # Fix corrupted/missing years
 │   │   ├── Embed_Data.ipynb             # Original embedding notebook
-│   │   ├── Embed_All_Data_Local.ipynb   # Full corpus embedding (local GPU)
-│   │   ├── Prepare_Additional_For_Embedding.ipynb   # Prep additional data for embedding
-│   │   └── Embed_Additional_Data.ipynb              # Embed additional data with BGE
+│   │   └── Embed_All_Data_Local.ipynb   # Full corpus embedding (local GPU)
 │   ├── quality/                    # Steps 1–5: Full quality pipeline
 │   │   ├── Sample_Data.ipynb            # Step 1: Sample docs for labeling
 │   │   ├── Label_Data.ipynb             # Step 2: GPT-4o-mini quality labeling (Batch API)
 │   │   ├── create_labeled_embeddings.py # Step 3: Join GPT labels with BGE embeddings
 │   │   ├── train_ridge_models.py        # Step 4: Train Ridge regressors per 25-year period
-│   │   ├── check_and_classify.py        # Step 5: Apply Ridge to classify all documents
+│   │   ├── check_and_classify.py        # Step 5: Classify all clean embedded documents
 │   │   └── Classify_Data.ipynb          # Interactive classification exploration
 │   ├── analysis/                   # Step 6: Cumulative token analysis
 │   │   ├── plot_cumulative_tokens.py    # Cumulative token graphs + cutoff scores
 │   │   └── Sanity_Check_Data.ipynb      # Data inspection/validation
 │   └── sharding/                   # Step 7: Final training data for nanochat
-│       └── prepare_training_data.py     # Quality filtering + sharding (English + additional)
+│       └── prepare_training_data.py     # Quality filtering + sharding
 │
 ├── post_training/                  # Stage 2: Instruction tuning data pipeline
 │   ├── config.py                   # Central config (periods, paths, API keys)
@@ -43,10 +41,12 @@ src/
 │   │   ├── export.py               # Export English corpus documents
 │   │   ├── export_additional.py    # Export additional news data
 │   │   ├── run_direct.py           # Generate QA pairs via GPT-4o-mini
-│   │   ├── convert.py              # Convert individual JSONs to per-collection JSONL
+│   │   ├── run.py                  # Original generation script
 │   │   ├── run_cot.py              # Chain-of-thought generation
 │   │   ├── run_curate.py           # Curation pipeline
-│   │   └── build_index.py          # Build document index
+│   │   ├── convert.py              # Convert individual JSONs to per-collection JSONL
+│   │   ├── build_index.py          # Build document index
+│   │   └── synth_config.yaml       # Synthesis configuration
 │   ├── instruct/                   # Instruction tuning pipeline
 │   │   ├── download.py             # Download external instruct datasets
 │   │   ├── filter.py               # LAB filtering
@@ -75,49 +75,21 @@ All data lives on `D:\hist_LLM\` (local SSD, not synced to Dropbox).
 
 ```
 D:\hist_LLM\
-├── corpus/                         # English historical corpus (1678-2023)
-│   ├── raw/                        # Raw text by year
-│   │   └── {year}/subset_*.parquet     # Columns: identifier, text, token_count, word_count, ...
-│   ├── cleaning_masks/             # Heuristic cleaning masks by year
-│   │   └── {year}/{subset}_mask.parquet    # Columns: original_index (clean row indices)
-│   ├── embeddings/                 # BGE embeddings by year
-│   │   └── embeddings_{year}.parquet   # Columns: original_index, embedding (1024-dim)
-│   └── classified/                 # Quality predictions by year
-│       └── classified_{year}.parquet   # Columns: identifier, predicted_quality, is_clean, ...
+├── corpus/                              # English historical corpus (1678-2023)
+│   ├── raw/{year}/subset_*.parquet      # Raw text (identifier, text, token_count, word_count)
+│   ├── cleaning_masks/{year}/*_mask.parquet  # Clean row indices per subset
+│   ├── embeddings/embeddings_{year}.parquet  # BGE embeddings (1024-dim)
+│   └── classified/classified_{year}.parquet  # Quality predictions (clean rows only)
 │
-├── additional_data/                # Curated news collections
-│   ├── raw/
-│   │   ├── news_archives/
-│   │   │   ├── NYT_filtered_500char/   nyt_{year}.parquet          (1851-2016)
-│   │   │   ├── Economist/              economist_{year}-*.parquet  (1843-2014)
-│   │   │   └── FT/                     {year}.parquet              (1888-2006)
-│   │   └── newswire/                   {year}_data_clean.json      (1878-1977)
-│   ├── cleaning_masks/             # Heuristic cleaning masks by collection
-│   │   └── {collection}/{file}_mask.parquet
-│   ├── embeddings/
-│   │   └── {collection}/embeddings_{year}.parquet
-│   └── classified/
-│       └── {collection}/classified_{year}.parquet
+├── processing/                          # Intermediate pipeline outputs
+│   ├── sample_data/training_samples_{period}.parquet
+│   ├── label_data/labeled_data_{period}.parquet
+│   ├── labeled_embeddings/embeddings_bge_{period}.parquet
+│   ├── quality_models/{ridge,scaler}_{period}.pkl
+│   └── quality_graphs/{cumulative_tokens_*.png, period_summary.csv}
 │
-├── processing/                     # Intermediate pipeline outputs
-│   ├── sample_data/                # Sampled docs for labeling
-│   │   └── training_samples_{25yr_period}.parquet
-│   ├── label_data/                 # GPT quality labels
-│   │   └── labeled_data_{25yr_period}.parquet
-│   ├── labeled_embeddings/         # Labels joined with embeddings
-│   │   └── embeddings_bge_{25yr_period}.parquet
-│   ├── quality_models/             # Trained Ridge models (14 periods)
-│   │   ├── ridge_{25yr_period}.pkl
-│   │   └── scaler_{25yr_period}.pkl
-│   ├── quality_graphs/             # Cumulative token plots
-│   │   ├── cumulative_tokens_{analysis_period}.png
-│   │   └── period_summary.csv      # Cutoff scores per analysis period
-│   └── staging/                    # Temp files during shard creation
-│
-└── periods/                        # Final sharded training data for nanochat
-    └── {analysis_period}/
-        └── base_data/
-            └── shard_{NNNNN}.parquet   # ~250M chars each, zstd compressed
+└── periods/{analysis_period}/base_data/ # Final sharded training data
+    └── shard_{NNNNN}.parquet            # ~250M chars each, zstd compressed
 ```
 
 **Period naming:**
@@ -128,114 +100,21 @@ D:\hist_LLM\
 
 ## Base Training Pipeline
 
-The pipeline produces quality-filtered, sharded text data from ~146M documents across both the English historical corpus and 4 news collections.
+Quality-filtered continued pretraining data from the English historical corpus (1678-2023, ~125M documents). See `base_training/README.md` for full details.
 
-```
-cleaning/        embeddings/       quality/                    analysis/       sharding/
-─────────        ───────────       ────────                    ─────────       ─────────
-Clean_Data  ──►  run_embeddings  ──►  Sample_Data.ipynb   ──►  plot_cumul.  ──►  prepare_
- .ipynb          _fast.py              Label_Data.ipynb         tokens.py        training
-                                       create_labeled_emb.py                     _data.py
-                                       train_ridge_models.py
-                                       check_and_classify.py
-```
+| Step | What | How |
+|------|------|-----|
+| 0 | Clean raw text | `cleaning/Clean_Data.ipynb` |
+| 0.5 | Generate embeddings | `embeddings/run_embeddings_fast.py` (GPU) |
+| 1 | Sample 10K docs/period | `quality/Sample_Data.ipynb` |
+| 2 | GPT-4o-mini labeling | `quality/Label_Data.ipynb` |
+| 3 | Join labels + embeddings | `python quality/create_labeled_embeddings.py` |
+| 4 | Train Ridge models | `python quality/train_ridge_models.py` |
+| 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` |
+| 6 | Cumulative token analysis | `python analysis/plot_cumulative_tokens.py` |
+| 7 | Shard training data | `python sharding/prepare_training_data.py` |
 
-### Step-by-step instructions
-
-#### Step 0: Clean raw text (heuristic filtering)
-
-Apply three heuristic filters (symbol ratio, punctuation density, stopwords) to remove
-garbled OCR, tables/lists, and non-English text. Produces cleaning masks used by
-downstream steps.
-
-**Notebook:** `base_training/cleaning/Clean_Data.ipynb`
-**Helper:** `base_training/cleaning/clean_data_helper.py`
-
-**Output:**
-- English: `D:\hist_LLM\corpus\cleaning_masks\{year}\{subset}_mask.parquet`
-- Additional: `D:\hist_LLM\additional_data\cleaning_masks\{collection}\{file}_mask.parquet`
-
-#### Step 1: Sample documents for labeling
-
-Sample ~10K documents per 25-year period from both English corpus and additional news data, proportionally by document count. Samples only from clean documents (uses masks from Step 0).
-
-**Notebook:** `base_training/quality/Sample_Data.ipynb`
-
-**Output:** `D:\hist_LLM\processing\sample_data\training_samples_{period}.parquet`
-
-#### Step 2: Label samples with GPT-4o-mini
-
-Rate each sampled document on a 1-5 quality scale using GPT-4o-mini via the OpenAI Batch API (50% cost savings).
-
-**Notebook:** `base_training/quality/Label_Data.ipynb`
-
-**Output:** `D:\hist_LLM\processing\label_data\labeled_data_{period}.parquet`
-
-#### Step 3: Create labeled embeddings
-
-Join GPT quality labels with BGE embeddings to produce training data for Ridge models.
-
-```bash
-python src/base_training/quality/create_labeled_embeddings.py
-python src/base_training/quality/create_labeled_embeddings.py --period 1901_1925  # single period
-```
-
-**Output:** `D:\hist_LLM\processing\labeled_embeddings\embeddings_bge_{period}.parquet`
-
-#### Step 4: Train Ridge models
-
-Train Ridge regression models (one per 25-year period) to predict quality scores from embeddings.
-
-```bash
-python src/base_training/quality/train_ridge_models.py
-```
-
-**Output:** `D:\hist_LLM\processing\quality_models\{ridge,scaler}_{period}.pkl` (28 files)
-
-#### Step 5: Classify all documents
-
-Apply Ridge models to predict quality scores for every embedded document.
-
-```bash
-# Classify English corpus
-python src/base_training/quality/check_and_classify.py
-python src/base_training/quality/check_and_classify.py --reclassify  # overwrite existing
-
-# Classify additional news data
-python src/base_training/quality/check_and_classify.py --additional
-python src/base_training/quality/check_and_classify.py --additional --collection nyt  # single collection
-
-# Check status only
-python src/base_training/quality/check_and_classify.py --status
-```
-
-**Output:**
-- English: `D:\hist_LLM\corpus\classified\classified_{year}.parquet`
-- Additional: `D:\hist_LLM\additional_data\classified\{collection}\classified_{year}.parquet`
-
-#### Step 6: Cumulative token analysis
-
-Determine quality cutoff scores by plotting cumulative tokens vs quality for each analysis period. The cutoff is set where cumulative tokens reach the 20B threshold.
-
-```bash
-python src/base_training/analysis/plot_cumulative_tokens.py
-```
-
-**Output:**
-- `D:\hist_LLM\processing\quality_graphs\cumulative_tokens_{period}.png`
-- `D:\hist_LLM\processing\quality_graphs\period_summary.csv` (cutoff scores)
-
-#### Step 7: Prepare sharded training data
-
-Filter documents above the cutoff score, load raw text from both English and additional sources, shuffle, and write ~250M character shards.
-
-```bash
-python src/base_training/sharding/prepare_training_data.py
-python src/base_training/sharding/prepare_training_data.py --period 1678_1849  # single period
-python src/base_training/sharding/prepare_training_data.py --dry-run           # stats only
-```
-
-**Output:** `D:\hist_LLM\periods\{period}\base_data\shard_{NNNNN}.parquet`
+All `python` commands run from repo root: `python src/base_training/quality/...`
 
 ---
 
@@ -268,19 +147,6 @@ export_additional.py ──► run_direct.py ──► convert.py ──► filt
 ```
 
 Post-training config is centralized in `src/post_training/config.py`.
-
----
-
-## Additional Data Collections
-
-| Collection | Source | Years | Documents | Text Column |
-|-----------|--------|-------|-----------|-------------|
-| NYT | New York Times | 1851-2016 | ~2.8M | `combined_text` |
-| Economist | The Economist | 1843-2014 | ~0.9M | `ocr_text` |
-| FT | Financial Times | 1888-2006 | ~14.4M | `text_cleaned` |
-| Newswire | Wire services | 1878-1977 | ~2.7M | `cleaned_article` |
-
-**Known issue:** Newswire 1957 JSON is corrupted and is skipped automatically.
 
 ---
 

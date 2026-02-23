@@ -1,208 +1,208 @@
-# Historical Document Quality Classification Pipeline
+# Base Training Pipeline
 
-This pipeline classifies historical documents (1678-2023) by quality on a 1-5 scale using BGE embeddings and Ridge regression.
+Quality-filtered continued pretraining data from the English historical corpus (1678-2023, ~125M documents).
 
-## Problem
+## Quick Start: Run in Order
 
-We have ~120 million documents across 346 years. Manually labeling all is impossible, so we:
-1. Sample a subset per time period
-2. Label samples using OpenAI GPT-4
-3. Train a classifier on labeled samples
-4. Run inference on the full dataset
+| Step | What | How | Output |
+|------|------|-----|--------|
+| 0 | Clean raw text | `cleaning/Clean_Data.ipynb` | `corpus/cleaning_masks/{year}/` |
+| 0.5 | Generate embeddings | `embeddings/run_embeddings_fast.py` (on GPU) | `corpus/embeddings/embeddings_{year}.parquet` |
+| 1 | Sample 10K docs/period | `quality/Sample_Data.ipynb` | `processing/sample_data/training_samples_{period}.parquet` |
+| 2 | GPT-4o-mini labeling | `quality/Label_Data.ipynb` | `processing/label_data/labeled_data_{period}.parquet` |
+| 3 | Join labels + embeddings | `python quality/create_labeled_embeddings.py` | `processing/labeled_embeddings/embeddings_bge_{period}.parquet` |
+| 4 | Train Ridge models | `python quality/train_ridge_models.py` | `processing/quality_models/{ridge,scaler}_{period}.pkl` |
+| 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` | `corpus/classified/classified_{year}.parquet` |
+| 6 | Cumulative token analysis | `python analysis/plot_cumulative_tokens.py` | `processing/quality_graphs/period_summary.csv` |
+| 7 | Shard training data | `python sharding/prepare_training_data.py` | `periods/{period}/base_data/shard_{NNNNN}.parquet` |
 
-## Pipeline Overview
+All `python` commands are run from the repo root: `python src/base_training/quality/...`
+
+All data paths are on `D:\hist_LLM\` (local SSD).
+
+---
+
+## Pipeline Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DATA PREPARATION                                     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   D:\English\{year}\subset_*.parquet                                        │
-│   (~120M documents, 346 years)                                              │
-│                                                                             │
-│                              │                                              │
-│                              ▼                                              │
-│                    ┌─────────────────┐                                      │
-│                    │  Clean_Data.ipynb│                                      │
-│                    │  (Remove noise)  │                                      │
-│                    └────────┬────────┘                                      │
-│                             │                                               │
-│                             ▼                                               │
-│              cleaning_masks\{year}\*_mask.parquet                           │
-│              (61M clean rows identified)                                    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         SAMPLING & LABELING                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│                    ┌─────────────────┐                                      │
-│                    │ Sample_Data.ipynb│                                      │
-│                    │ (10k per period) │                                      │
-│                    └────────┬────────┘                                      │
-│                             │                                               │
-│                             ▼                                               │
-│                    ┌─────────────────┐                                      │
-│                    │ Label_Data.ipynb │                                      │
-│                    │ (OpenAI GPT-4)   │                                      │
-│                    └────────┬────────┘                                      │
-│                             │                                               │
-│                             ▼                                               │
-│              Labeled samples with quality scores 1-5                        │
-│              (~10k samples × 14 periods = 140k labeled)                     │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         EMBEDDING & TRAINING                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   LOCAL (Windows)                      REMOTE (Lambda GPU)                  │
-│   ───────────────                      ──────────────────                   │
-│                                                                             │
-│   Embed_All_Data_Local_Parallel2.ipynb                                      │
-│        │                                                                    │
-│        │ 1. Slim & archive year ──────► Lambda processes with               │
-│        │ 2. Upload via SCP              run_embeddings_fast.py              │
-│        │ 3. Wait for results            (BGE-large-en-v1.5, fp16)           │
-│        │ 4. Download & verify ◄──────── embeddings_{year}.parquet           │
-│        ▼                                                                    │
-│   D:\English_Results\embeddings_{year}.parquet                              │
-│                                                                             │
-│                              │                                              │
-│                              ▼                                              │
-│                    ┌──────────────────┐                                     │
-│                    │train_ridge_models│                                     │
-│                    │    .py           │                                     │
-│                    └────────┬─────────┘                                     │
-│                             │                                               │
-│                             ▼                                               │
-│              Models\ridge_{period}.pkl  (14 models)                         │
-│              Models\scaler_{period}.pkl (14 scalers)                        │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CLASSIFICATION                                       │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│                    ┌────────────────────┐                                   │
-│                    │check_and_classify.py│                                   │
-│                    └─────────┬──────────┘                                   │
-│                              │                                              │
-│                              ▼                                              │
-│              D:\English_Classified\classified_{year}.parquet                │
-│                                                                             │
-│              Columns:                                                       │
-│              - identifier (document ID)                                     │
-│              - predicted_quality (1-5 continuous)                           │
-│              - is_clean (True)                                              │
-│              - token_count                                                  │
-│              - word_count                                                   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         FINAL SELECTION                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│   Sort all documents by predicted_quality (descending)                      │
-│   Select top documents until cumulative token_count reaches 35B             │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+cleaning/          embeddings/        quality/                      analysis/        sharding/
+---------          -----------        --------                      ---------        ---------
+Clean_Data.ipynb   run_embeddings  -> Sample_Data.ipynb          -> plot_cumul.   -> prepare_
+  |                _fast.py            Label_Data.ipynb              tokens.py       training
+  v                  |                 create_labeled_emb.py                         _data.py
+cleaning_masks/      v                 train_ridge_models.py
+                  embeddings/          check_and_classify.py
+                                         |
+                                         v
+                                      classified/
 ```
 
-## Time Periods
+---
 
-Models are trained separately for 14 periods (25-year windows):
+## Step Details
 
-| Period | Years | Period | Years |
-|--------|-------|--------|-------|
-| 1678_1700 | 1678-1700 | 1851_1875 | 1851-1875 |
-| 1701_1725 | 1701-1725 | 1876_1900 | 1876-1900 |
-| 1726_1750 | 1726-1750 | 1901_1925 | 1901-1925 |
-| 1751_1775 | 1751-1775 | 1926_1950 | 1926-1950 |
-| 1776_1800 | 1776-1800 | 1951_1975 | 1951-1975 |
-| 1801_1825 | 1801-1825 | 1976_2000 | 1976-2000 |
-| 1826_1850 | 1826-1850 | 2001_2023 | 2001-2023 |
+### Step 0: Clean raw text
+
+Apply three heuristic filters to remove garbled OCR, tables/lists, and non-English text. Produces cleaning masks (indices of clean rows) used by Steps 1 and 5.
+
+**Run:** `cleaning/Clean_Data.ipynb`
+
+Three-stage filter (see `clean_data_helper.py`):
+1. **Symbol ratio** -- rejects garbled OCR (non-word chars > 25% of words)
+2. **Punctuation density** -- rejects tables/lists (<12% of lines end with `.?!`)
+3. **Stopwords** -- rejects non-English text (fewer than 3 common stopwords)
+
+**Output:** `D:\hist_LLM\corpus\cleaning_masks\{year}\{subset}_mask.parquet`
+
+### Step 0.5: Generate BGE embeddings
+
+Embed all documents using BGE-large-en-v1.5 (1024-dim). Requires GPU.
+
+**Run:** `embeddings/run_embeddings_fast.py` on a GPU machine, or `embeddings/Embed_All_Data_Local.ipynb` for local processing.
+
+**Output:** `D:\hist_LLM\corpus\embeddings\embeddings_{year}.parquet`
+
+### Step 1: Sample documents for labeling
+
+Sample ~10K clean documents per 25-year period (14 periods). Equal allocation across years within each period. Only samples from documents passing cleaning masks.
+
+**Run:** `quality/Sample_Data.ipynb`
+
+**Output:** `D:\hist_LLM\processing\sample_data\training_samples_{period}.parquet` -- schema: `[text, original_index, year]`
+
+### Step 2: Label samples with GPT-4o-mini
+
+Rate each sampled document on a 1-5 quality scale via OpenAI Batch API (50% cost savings). Scoring based on Information Density and Data Hygiene; final score = min of both.
+
+**Run:** `quality/Label_Data.ipynb`
+
+Three cells to run in sequence:
+1. `submit_batches()` -- creates JSONL, uploads, submits batch jobs
+2. `check_and_download()` -- poll periodically until all complete, auto-merges results
+3. `sanity_check()` -- verify score distributions
+
+**Output:** `D:\hist_LLM\processing\label_data\labeled_data_{period}.parquet` -- adds `score` column (1-5)
+
+### Step 3: Create labeled embeddings
+
+Join GPT quality labels with BGE embeddings to produce Ridge training data.
+
+```bash
+python src/base_training/quality/create_labeled_embeddings.py
+python src/base_training/quality/create_labeled_embeddings.py --period 1901_1925  # single period
+```
+
+**Output:** `D:\hist_LLM\processing\labeled_embeddings\embeddings_bge_{period}.parquet` -- schema: `[original_index, labels, embedding]`
+
+### Step 4: Train Ridge models
+
+Train StandardScaler + RidgeCV pipeline for each 25-year period (14 models total).
+
+```bash
+python src/base_training/quality/train_ridge_models.py
+```
+
+**Output:** `D:\hist_LLM\processing\quality_models\{ridge,scaler}_{period}.pkl` (28 files + `training_summary.csv`)
+
+### Step 5: Classify all documents
+
+Apply Ridge models to predict quality scores for every clean embedded document. Only classifies rows passing cleaning masks from Step 0.
+
+```bash
+python src/base_training/quality/check_and_classify.py                # classify unclassified years
+python src/base_training/quality/check_and_classify.py --reclassify   # overwrite all
+python src/base_training/quality/check_and_classify.py --status       # check status only
+```
+
+**Output:** `D:\hist_LLM\corpus\classified\classified_{year}.parquet` -- schema: `[identifier, predicted_quality, is_clean, token_count, word_count]`
+
+### Step 6: Cumulative token analysis
+
+Plot cumulative tokens vs quality for each analysis period. The quality cutoff is where cumulative tokens reach the 20B threshold.
+
+```bash
+python src/base_training/analysis/plot_cumulative_tokens.py
+```
+
+**Output:**
+- `D:\hist_LLM\processing\quality_graphs\cumulative_tokens_{period}.png` (6 plots)
+- `D:\hist_LLM\processing\quality_graphs\period_summary.csv` (cutoff scores)
+
+### Step 7: Prepare sharded training data
+
+Filter documents above the cutoff score, load raw text, shuffle, and write ~250M character shards for nanochat.
+
+```bash
+python src/base_training/sharding/prepare_training_data.py
+python src/base_training/sharding/prepare_training_data.py --period 1678_1849  # single period
+python src/base_training/sharding/prepare_training_data.py --dry-run           # stats only
+```
+
+**Output:** `D:\hist_LLM\periods\{period}\base_data\shard_{NNNNN}.parquet`
+
+---
+
+## Period Naming
+
+- **14 x 25-year periods** (for Ridge models): `1678_1700`, `1701_1725`, ..., `2001_2023`
+- **6 analysis periods** (for training shards):
+
+| Period | Era | Years |
+|--------|-----|-------|
+| `1678_1849` | Early Modern + Industrial Revolution | 1678-1849 |
+| `1850_1899` | Victorian Era | 1850-1899 |
+| `1900_1949` | World Wars Era | 1900-1949 |
+| `1950_1999` | Cold War + Digital Age | 1950-1999 |
+| `2000_2009` | Early Internet | 2000-2009 |
+| `2010_2023` | Social Media Era | 2010-2023 |
+
+---
 
 ## File Reference
 
-### Active Scripts
-
-| File | Purpose | When to Run |
-|------|---------|-------------|
-| `check_and_classify.py` | Check status & classify new embeddings | After new embeddings are downloaded |
-| `download_embeddings_safe.py` | Safe download from Lambda with verification | When downloading results |
-| `reprocess_years.py` | Manage corrupted/missing years | When troubleshooting |
-| `train_ridge_models.py` | Train Ridge classifiers | One-time (or if retraining) |
-| `run_embeddings_fast.py` | Embedding script (deployed on Lambda) | Runs automatically on Lambda |
-
-### Active Notebooks
-
-| File | Purpose |
-|------|---------|
-| `Embed_All_Data_Local_Parallel2.ipynb` | Main workflow: upload data, wait, download results |
-| `Clean_Data.ipynb` | Data cleaning pipeline |
-| `Label_Data.ipynb` | OpenAI labeling pipeline |
-| `Classify_Data.ipynb` | Classification analysis |
-
-### Legacy/Reference (can be deleted)
-
-| File | Notes |
-|------|-------|
-| `Embed_All_Data_Local.ipynb` | Superseded by Parallel2 |
-| `Embed_All_Data_Local_Parallel.ipynb` | Superseded by Parallel2 |
-| `Embed_Data.ipynb` | Early exploration |
-| `Sample_Data.ipynb` | One-time sampling |
-| `classify_full_data.py` | Superseded by check_and_classify.py |
-| `run_embeddings_all.py` | Superseded by run_embeddings_fast.py |
-| `benchmark_*.py` | One-time benchmarks |
-
-## Common Commands
-
-```bash
-# Check pipeline status
-python code/check_and_classify.py --status
-
-# Classify new embeddings (also adds token counts)
-python code/check_and_classify.py
-
-# Check reprocessing status
-python code/reprocess_years.py
-
-# Safe download from Lambda
-python code/download_embeddings_safe.py --year 1800
-
-# Delete corrupted embedding files
-python code/reprocess_years.py --delete-corrupted
-
-# Upload year for reprocessing
-python code/reprocess_years.py --upload 1800
+```
+base_training/
+├── cleaning/
+│   ├── Clean_Data.ipynb              # Step 0: Heuristic text cleaning
+│   └── clean_data_helper.py          # Cleaning utilities (compute_clean_mask)
+├── embeddings/
+│   ├── run_embeddings_fast.py        # Step 0.5: BGE embedding (GPU)
+│   ├── Embed_All_Data_Local.ipynb    # Full corpus embedding (local GPU)
+│   ├── Embed_Data.ipynb              # Original embedding notebook
+│   └── reprocess_embeddings_years.py # Fix corrupted/missing years
+├── quality/
+│   ├── Sample_Data.ipynb             # Step 1: Sample docs for labeling
+│   ├── Label_Data.ipynb              # Step 2: GPT-4o-mini batch labeling
+│   ├── create_labeled_embeddings.py  # Step 3: Join labels + embeddings
+│   ├── train_ridge_models.py         # Step 4: Train Ridge regressors
+│   ├── check_and_classify.py         # Step 5: Classify all clean docs
+│   └── Classify_Data.ipynb           # Interactive classification exploration
+├── analysis/
+│   ├── plot_cumulative_tokens.py     # Step 6: Cumulative token graphs
+│   └── Sanity_Check_Data.ipynb       # Data inspection/validation
+└── sharding/
+    └── prepare_training_data.py      # Step 7: Quality filtering + sharding
 ```
 
-## Directory Structure
+---
+
+## Data Directory Structure
 
 ```
-D:\English\                          # Raw data
-    {year}\
-        subset_*.parquet             # 100 files per year
-
-D:\English_Results\                  # Embeddings
-    embeddings_{year}.parquet
-
-D:\English_Classified\               # Final output
-    classified_{year}.parquet
-
-Dropbox\hist_LLM\
-    Data\
-        Clean_Data\cleaning_masks\   # Cleaning masks
-        Classify_Data\Models\        # Ridge models
-        Embedding_Data\              # Training embeddings
-    code\                            # This folder
+D:\hist_LLM\
+├── corpus/                              # English historical corpus (1678-2023)
+│   ├── raw/{year}/subset_*.parquet      # Raw text (identifier, text, token_count, word_count)
+│   ├── cleaning_masks/{year}/*_mask.parquet  # Clean row indices per subset
+│   ├── embeddings/embeddings_{year}.parquet  # BGE embeddings (1024-dim)
+│   └── classified/classified_{year}.parquet  # Quality predictions (clean rows only)
+│
+├── processing/                          # Intermediate pipeline outputs
+│   ├── sample_data/training_samples_{period}.parquet
+│   ├── label_data/labeled_data_{period}.parquet
+│   ├── labeled_embeddings/embeddings_bge_{period}.parquet
+│   ├── quality_models/{ridge,scaler}_{period}.pkl
+│   └── quality_graphs/{cumulative_tokens_*.png, period_summary.csv}
+│
+└── periods/{analysis_period}/base_data/ # Final sharded training data
+    └── shard_{NNNNN}.parquet            # ~250M chars each, zstd compressed
 ```
