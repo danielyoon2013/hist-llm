@@ -96,7 +96,7 @@ def get_high_quality_identifiers(start_year: int, end_year: int, cutoff: float) 
         if not classified_path.exists():
             continue
         df = pd.read_parquet(classified_path, columns=['identifier', 'predicted_quality'])
-        high_quality = df[df['predicted_quality'] >= cutoff]['identifier'].tolist()
+        high_quality = df[df['predicted_quality'] >= cutoff]['identifier'].astype(str).tolist()
         ids.update(high_quality)
         del df
 
@@ -116,7 +116,7 @@ def _read_matching_texts(args):
         all_texts = []
         for rg_idx in range(pf.metadata.num_row_groups):
             # Pass 1: identifier column only — cheap, small column
-            ids = pf.read_row_group(rg_idx, columns=['identifier']).column('identifier').to_pylist()
+            ids = [str(x) for x in pf.read_row_group(rg_idx, columns=['identifier']).column('identifier').to_pylist()]
             mask = [id_val in valid_set for id_val in ids]
             if not any(mask):
                 continue  # Skip expensive text column read for this row group
@@ -179,7 +179,8 @@ def prepare_period(start_year: int, end_year: int, period_name: str,
     base_data_dir.mkdir(parents=True, exist_ok=True)
     staging_dir = STAGING_DIR / period_name
     staging_dir.mkdir(parents=True, exist_ok=True)
-    temp_path = staging_dir / "_temp.parquet"
+    temp_name = f"_temp_{output_suffix}.parquet" if output_suffix else "_temp.parquet"
+    temp_path = staging_dir / temp_name
     schema = pa.schema([('text', pa.string())])
     writer = pq.ParquetWriter(temp_path, schema, use_dictionary=False, compression='zstd')
     total_docs = 0
