@@ -3,24 +3,25 @@ Prepare training data for nanochat by filtering high-quality documents.
 
 This script:
 1. Loads classified documents for each analysis period
-2. Filters documents above the quality cutoff threshold (from period_summary.csv)
+2. Filters documents above the quality cutoff threshold
 3. Joins with raw text from the English corpus
 4. Shards data into ~250M character parquet files for nanochat
 
 Source: D:\hist_LLM\corpus\{classified,raw}\
 
-Optimizations:
-- Parallel file reads within each year (16 workers, saturates SSD I/O)
-- Sequential year processing (only 1 year in memory at a time)
-- Two-pass reads (identifier column first, skip row groups with no matches)
-- PyArrow direct (no pandas DataFrame overhead for text loading)
+Cutoff modes:
+- Default: uses period_summary.csv (20B-token threshold cutoff)
+- --cutoff <float>: manual override (use 0 for all clean docs)
+- --top-pct <int>: top N% by quality score (computes percentile from classified data)
 
-Output: D:\hist_LLM\periods\{period}\base_data\shard_{NNNNN}.parquet
+Output: D:\hist_LLM\periods\{period}\base_data[_suffix]\shard_{NNNNN}.parquet
 
 Usage:
-    python prepare_training_data.py                    # Prepare all periods
-    python prepare_training_data.py --period 1678_1849 # Prepare single period
-    python prepare_training_data.py --dry-run          # Show stats without writing
+    python prepare_training_data.py                              # All periods, default cutoff
+    python prepare_training_data.py --period 1900_1949           # Single period
+    python prepare_training_data.py --period 1900_1949 --cutoff 0 --output-suffix all
+    python prepare_training_data.py --period 1900_1949 --top-pct 50 --output-suffix top50
+    python prepare_training_data.py --dry-run                    # Stats only
 """
 
 import pandas as pd
@@ -63,6 +64,27 @@ def load_cutoff_scores() -> dict:
     """Load cutoff scores from period_summary.csv."""
     df = pd.read_csv(CUTOFF_FILE)
     return dict(zip(df['period'], df['cutoff_score']))
+
+
+def compute_percentile_cutoff(start_year: int, end_year: int, top_pct: int) -> float:
+    """Compute the quality score at a given percentile from classified data.
+
+    top_pct=50 means top 50%, so we find the 50th percentile (median).
+    """
+    scores = []
+    for year in tqdm(range(start_year, end_year + 1), desc="Loading scores for percentile", leave=False):
+        classified_path = CLASSIFIED_DIR / f"classified_{year}.parquet"
+        if not classified_path.exists():
+            continue
+        df = pd.read_parquet(classified_path, columns=['predicted_quality'])
+        scores.append(df['predicted_quality'].values)
+        del df
+
+    all_scores = np.concatenate(scores)
+    # top_pct=50 means keep top 50%, so cutoff is at the 50th percentile
+    cutoff = float(np.percentile(all_scores, 100 - top_pct))
+    print(f"  Top {top_pct}% cutoff: {cutoff:.4f} (from {len(all_scores):,} classified docs)")
+    return cutoff
 
 
 def get_high_quality_identifiers(start_year: int, end_year: int, cutoff: float) -> set:
@@ -130,10 +152,12 @@ def load_texts_for_year(year: int, valid_identifiers: set) -> list:
 
 
 def prepare_period(start_year: int, end_year: int, period_name: str,
-                   cutoff: float, dry_run: bool = False) -> dict:
+                   cutoff: float, dry_run: bool = False,
+                   output_suffix: str = None) -> dict:
     """Prepare training data for a single period."""
+    dir_name = f"base_data_{output_suffix}" if output_suffix else "base_data"
     print(f"\n{'='*60}")
-    print(f"Preparing {period_name} (cutoff={cutoff:.4f})")
+    print(f"Preparing {period_name} (cutoff={cutoff:.4f}) -> {dir_name}")
     print(f"{'='*60}")
 
     # Step 1: Get high-quality document identifiers
@@ -151,7 +175,7 @@ def prepare_period(start_year: int, end_year: int, period_name: str,
 
     # Step 2: Stream text content to temp file on local disk (avoids Dropbox sync bottleneck)
     print("Step 2: Loading text content...")
-    base_data_dir = OUTPUT_DIR / period_name / "base_data"
+    base_data_dir = OUTPUT_DIR / period_name / dir_name
     base_data_dir.mkdir(parents=True, exist_ok=True)
     staging_dir = STAGING_DIR / period_name
     staging_dir.mkdir(parents=True, exist_ok=True)
@@ -237,13 +261,14 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare training data for nanochat")
     parser.add_argument('--period', type=str, help='Single period to process (e.g., 1678_1849)')
     parser.add_argument('--dry-run', action='store_true', help='Show stats without writing files')
+    parser.add_argument('--cutoff', type=float, help='Manual cutoff override (use 0 for all clean docs)')
+    parser.add_argument('--top-pct', type=int, help='Keep top N%% by quality (e.g., 50 for top half)')
+    parser.add_argument('--output-suffix', type=str, help='Output dir suffix (e.g., "all" -> base_data_all)')
     args = parser.parse_args()
 
-    # Load cutoff scores
-    cutoff_scores = load_cutoff_scores()
-    print("Cutoff scores:")
-    for period, cutoff in cutoff_scores.items():
-        print(f"  {period}: {cutoff:.4f}")
+    if args.cutoff is not None and args.top_pct is not None:
+        print("Error: --cutoff and --top-pct are mutually exclusive")
+        return
 
     # Filter periods if specified
     if args.period:
@@ -254,15 +279,31 @@ def main():
     else:
         periods = PERIOD_RANGES
 
+    # Resolve cutoff scores
+    use_manual = args.cutoff is not None or args.top_pct is not None
+    cutoff_scores = {} if use_manual else load_cutoff_scores()
+
+    if not use_manual:
+        print("Cutoff scores (from period_summary.csv):")
+        for period, cutoff in cutoff_scores.items():
+            print(f"  {period}: {cutoff:.4f}")
+
     # Process each period
     results = []
     for start, end, period_name in periods:
-        cutoff = cutoff_scores.get(period_name)
-        if cutoff is None:
-            print(f"[SKIP] No cutoff score for {period_name}")
-            continue
+        if args.cutoff is not None:
+            cutoff = args.cutoff
+            print(f"\nUsing manual cutoff: {cutoff:.4f}")
+        elif args.top_pct is not None:
+            cutoff = compute_percentile_cutoff(start, end, args.top_pct)
+        else:
+            cutoff = cutoff_scores.get(period_name)
+            if cutoff is None:
+                print(f"[SKIP] No cutoff score for {period_name}")
+                continue
 
-        result = prepare_period(start, end, period_name, cutoff, dry_run=args.dry_run)
+        result = prepare_period(start, end, period_name, cutoff,
+                                dry_run=args.dry_run, output_suffix=args.output_suffix)
         results.append(result)
 
     # Print summary

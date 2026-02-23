@@ -88,8 +88,10 @@ D:\hist_LLM\
 │   ├── quality_models/{ridge,scaler}_{period}.pkl
 │   └── quality_graphs/{cumulative_tokens_*.png, period_summary.csv}
 │
-└── periods/{analysis_period}/base_data/ # Final sharded training data
-    └── shard_{NNNNN}.parquet            # ~250M chars each, zstd compressed
+└── periods/{analysis_period}/           # Final sharded training data
+    ├── base_data/shard_{NNNNN}.parquet          # Default (20B-token cutoff)
+    ├── base_data_all/shard_{NNNNN}.parquet      # Experimental: no quality filter
+    └── base_data_top50/shard_{NNNNN}.parquet    # Experimental: top 50% by quality
 ```
 
 **Period naming:**

@@ -14,7 +14,7 @@ Quality-filtered continued pretraining data from the English historical corpus (
 | 4 | Train Ridge models | `python quality/train_ridge_models.py` | `processing/quality_models/{ridge,scaler}_{period}.pkl` |
 | 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` | `corpus/classified/classified_{year}.parquet` |
 | 6 | Cumulative token analysis | `python analysis/plot_cumulative_tokens.py` | `processing/quality_graphs/period_summary.csv` |
-| 7 | Shard training data | `python sharding/prepare_training_data.py` | `periods/{period}/base_data/shard_{NNNNN}.parquet` |
+| 7 | Shard training data | `python sharding/prepare_training_data.py` | `periods/{period}/base_data[_suffix]/shard_{NNNNN}.parquet` |
 
 All `python` commands are run from the repo root: `python src/base_training/quality/...`
 
@@ -133,12 +133,17 @@ python src/base_training/analysis/plot_cumulative_tokens.py
 Filter documents above the cutoff score, load raw text, shuffle, and write ~250M character shards for nanochat.
 
 ```bash
+# Default: use cutoff from period_summary.csv (20B-token threshold)
 python src/base_training/sharding/prepare_training_data.py
 python src/base_training/sharding/prepare_training_data.py --period 1678_1849  # single period
 python src/base_training/sharding/prepare_training_data.py --dry-run           # stats only
+
+# Experimental: manual cutoff or percentile-based filtering
+python src/base_training/sharding/prepare_training_data.py --period 1900_1949 --cutoff 0 --output-suffix all       # all clean docs
+python src/base_training/sharding/prepare_training_data.py --period 1900_1949 --top-pct 50 --output-suffix top50   # top 50% by quality
 ```
 
-**Output:** `D:\hist_LLM\periods\{period}\base_data\shard_{NNNNN}.parquet`
+**Output:** `D:\hist_LLM\periods\{period}\base_data[_suffix]\shard_{NNNNN}.parquet`
 
 ---
 
@@ -203,6 +208,8 @@ D:\hist_LLM\
 │   ├── quality_models/{ridge,scaler}_{period}.pkl
 │   └── quality_graphs/{cumulative_tokens_*.png, period_summary.csv}
 │
-└── periods/{analysis_period}/base_data/ # Final sharded training data
-    └── shard_{NNNNN}.parquet            # ~250M chars each, zstd compressed
+└── periods/{analysis_period}/           # Final sharded training data
+    ├── base_data/shard_{NNNNN}.parquet          # Default (20B-token cutoff), ~250M chars each
+    ├── base_data_all/shard_{NNNNN}.parquet      # --output-suffix all (no quality filter)
+    └── base_data_top50/shard_{NNNNN}.parquet    # --output-suffix top50 (top 50% by quality)
 ```
