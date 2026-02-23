@@ -14,7 +14,7 @@ Quality-filtered continued pretraining data from the English historical corpus (
 | 4 | Train Ridge models | `python quality/train_ridge_models.py` | `processing/quality_models/{ridge,scaler}_{period}.pkl` |
 | 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` | `corpus/classified/classified_{year}.parquet` |
 | 6 | Compute quality cutoffs | `python analysis/compute_quality_cutoffs.py` | `processing/quality_graphs/period_summary.csv` |
-| 7 | Shard training data | `python sharding/prepare_training_data.py` | `periods/{period}/base_data[_suffix]/shard_{NNNNN}.parquet` |
+| 7 | Shard training data | `python sharding/prepare_base_data.py` | `periods/{period}/base_data[_suffix]/shard_{NNNNN}.parquet` |
 
 All `python` commands are run from the repo root: `python src/base_training/quality/...`
 
@@ -28,8 +28,8 @@ All data paths are on `D:\hist_LLM\` (local SSD).
 cleaning/          embeddings/        quality/                      analysis/        sharding/
 ---------          -----------        --------                      ---------        ---------
 Clean_Data.ipynb   run_embeddings  -> Sample_Data.ipynb          -> compute_     -> prepare_
-  |                _fast.py            Label_Data.ipynb              quality_       training
-  v                  |                 create_labeled_emb.py         cutoffs.py     _data.py
+  |                _fast.py            Label_Data.ipynb              quality_       base_
+  v                  |                 create_labeled_emb.py         cutoffs.py     data.py
 cleaning_masks/      v                 train_ridge_models.py
                   embeddings/          check_and_classify.py
                                          |
@@ -134,13 +134,13 @@ Filter documents above the cutoff score, load raw text, shuffle, and write ~250M
 
 ```bash
 # Default: use cutoff from period_summary.csv (20B-token threshold)
-python src/base_training/sharding/prepare_training_data.py
-python src/base_training/sharding/prepare_training_data.py --period 1678_1849  # single period
-python src/base_training/sharding/prepare_training_data.py --dry-run           # stats only
+python src/base_training/sharding/prepare_base_data.py
+python src/base_training/sharding/prepare_base_data.py --period 1678_1849  # single period
+python src/base_training/sharding/prepare_base_data.py --dry-run           # stats only
 
 # Experimental: manual cutoff or percentile-based filtering
-python src/base_training/sharding/prepare_training_data.py --period 1900_1949 --cutoff 0 --output-suffix all       # all clean docs
-python src/base_training/sharding/prepare_training_data.py --period 1900_1949 --top-pct 50 --output-suffix top50   # top 50% by quality
+python src/base_training/sharding/prepare_base_data.py --period 1900_1949 --cutoff 0 --output-suffix all       # all clean docs
+python src/base_training/sharding/prepare_base_data.py --period 1900_1949 --top-pct 50 --output-suffix top50   # top 50% by quality
 ```
 
 **Output:** `D:\hist_LLM\periods\{period}\base_data[_suffix]\shard_{NNNNN}.parquet`
@@ -186,7 +186,7 @@ base_training/
 │   ├── compute_quality_cutoffs.py    # Step 6: Quality cutoffs + cumulative token graphs
 │   └── Sanity_Check_Data.ipynb       # Data inspection/validation
 └── sharding/
-    └── prepare_training_data.py      # Step 7: Quality filtering + sharding
+    └── prepare_base_data.py          # Step 7: Quality filtering + sharding
 ```
 
 ---

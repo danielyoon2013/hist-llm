@@ -32,7 +32,7 @@ src/
 │   │   ├── compute_quality_cutoffs.py   # Quality cutoff scores + cumulative token graphs
 │   │   └── Sanity_Check_Data.ipynb      # Data inspection/validation
 │   └── sharding/                   # Step 7: Final training data for nanochat
-│       └── prepare_training_data.py     # Quality filtering + sharding
+│       └── prepare_base_data.py         # Quality filtering + sharding
 │
 ├── post_training/                  # Stage 2: Instruction tuning data pipeline
 │   ├── config.py                   # Central config (periods, paths, API keys)
@@ -114,7 +114,7 @@ Quality-filtered continued pretraining data from the English historical corpus (
 | 4 | Train Ridge models | `python quality/train_ridge_models.py` |
 | 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` |
 | 6 | Compute quality cutoffs | `python analysis/compute_quality_cutoffs.py` |
-| 7 | Shard training data | `python sharding/prepare_training_data.py` |
+| 7 | Shard training data | `python sharding/prepare_base_data.py` |
 
 All `python` commands run from repo root: `python src/base_training/quality/...`
 

@@ -17,11 +17,11 @@ Cutoff modes:
 Output: D:\hist_LLM\periods\{period}\base_data[_suffix]\shard_{NNNNN}.parquet
 
 Usage:
-    python prepare_training_data.py                              # All periods, default cutoff
-    python prepare_training_data.py --period 1900_1949           # Single period
-    python prepare_training_data.py --period 1900_1949 --cutoff 0 --output-suffix all
-    python prepare_training_data.py --period 1900_1949 --top-pct 50 --output-suffix top50
-    python prepare_training_data.py --dry-run                    # Stats only
+    python prepare_base_data.py                              # All periods, default cutoff
+    python prepare_base_data.py --period 1900_1949           # Single period
+    python prepare_base_data.py --period 1900_1949 --cutoff 0 --output-suffix all
+    python prepare_base_data.py --period 1900_1949 --top-pct 50 --output-suffix top50
+    python prepare_base_data.py --dry-run                    # Stats only
 """
 
 import pandas as pd
