@@ -29,7 +29,7 @@ src/
 │   │   ├── check_and_classify.py        # Step 5: Classify all clean embedded documents
 │   │   └── Classify_Data.ipynb          # Interactive classification exploration
 │   ├── analysis/                   # Step 6: Cumulative token analysis
-│   │   ├── plot_cumulative_tokens.py    # Cumulative token graphs + cutoff scores
+│   │   ├── compute_quality_cutoffs.py   # Quality cutoff scores + cumulative token graphs
 │   │   └── Sanity_Check_Data.ipynb      # Data inspection/validation
 │   └── sharding/                   # Step 7: Final training data for nanochat
 │       └── prepare_training_data.py     # Quality filtering + sharding
@@ -113,7 +113,7 @@ Quality-filtered continued pretraining data from the English historical corpus (
 | 3 | Join labels + embeddings | `python quality/create_labeled_embeddings.py` |
 | 4 | Train Ridge models | `python quality/train_ridge_models.py` |
 | 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` |
-| 6 | Cumulative token analysis | `python analysis/plot_cumulative_tokens.py` |
+| 6 | Compute quality cutoffs | `python analysis/compute_quality_cutoffs.py` |
 | 7 | Shard training data | `python sharding/prepare_training_data.py` |
 
 All `python` commands run from repo root: `python src/base_training/quality/...`

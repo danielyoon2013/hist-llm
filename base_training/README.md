@@ -13,7 +13,7 @@ Quality-filtered continued pretraining data from the English historical corpus (
 | 3 | Join labels + embeddings | `python quality/create_labeled_embeddings.py` | `processing/labeled_embeddings/embeddings_bge_{period}.parquet` |
 | 4 | Train Ridge models | `python quality/train_ridge_models.py` | `processing/quality_models/{ridge,scaler}_{period}.pkl` |
 | 5 | Classify all docs | `python quality/check_and_classify.py --reclassify` | `corpus/classified/classified_{year}.parquet` |
-| 6 | Cumulative token analysis | `python analysis/plot_cumulative_tokens.py` | `processing/quality_graphs/period_summary.csv` |
+| 6 | Compute quality cutoffs | `python analysis/compute_quality_cutoffs.py` | `processing/quality_graphs/period_summary.csv` |
 | 7 | Shard training data | `python sharding/prepare_training_data.py` | `periods/{period}/base_data[_suffix]/shard_{NNNNN}.parquet` |
 
 All `python` commands are run from the repo root: `python src/base_training/quality/...`
@@ -27,9 +27,9 @@ All data paths are on `D:\hist_LLM\` (local SSD).
 ```
 cleaning/          embeddings/        quality/                      analysis/        sharding/
 ---------          -----------        --------                      ---------        ---------
-Clean_Data.ipynb   run_embeddings  -> Sample_Data.ipynb          -> plot_cumul.   -> prepare_
-  |                _fast.py            Label_Data.ipynb              tokens.py       training
-  v                  |                 create_labeled_emb.py                         _data.py
+Clean_Data.ipynb   run_embeddings  -> Sample_Data.ipynb          -> compute_     -> prepare_
+  |                _fast.py            Label_Data.ipynb              quality_       training
+  v                  |                 create_labeled_emb.py         cutoffs.py     _data.py
 cleaning_masks/      v                 train_ridge_models.py
                   embeddings/          check_and_classify.py
                                          |
@@ -116,12 +116,12 @@ python src/base_training/quality/check_and_classify.py --status       # check st
 
 **Output:** `D:\hist_LLM\corpus\classified\classified_{year}.parquet` -- schema: `[identifier, predicted_quality, is_clean, token_count, word_count]`
 
-### Step 6: Cumulative token analysis
+### Step 6: Compute quality cutoffs
 
-Plot cumulative tokens vs quality for each analysis period. The quality cutoff is where cumulative tokens reach the 20B threshold.
+Compute quality cutoff scores for each analysis period. For each period, sorts documents by predicted quality and finds the score where cumulative tokens reach the 20B threshold. Also generates cumulative token plots.
 
 ```bash
-python src/base_training/analysis/plot_cumulative_tokens.py
+python src/base_training/analysis/compute_quality_cutoffs.py
 ```
 
 **Output:**
@@ -183,7 +183,7 @@ base_training/
 │   ├── check_and_classify.py         # Step 5: Classify all clean docs
 │   └── Classify_Data.ipynb           # Interactive classification exploration
 ├── analysis/
-│   ├── plot_cumulative_tokens.py     # Step 6: Cumulative token graphs
+│   ├── compute_quality_cutoffs.py    # Step 6: Quality cutoffs + cumulative token graphs
 │   └── Sanity_Check_Data.ipynb       # Data inspection/validation
 └── sharding/
     └── prepare_training_data.py      # Step 7: Quality filtering + sharding
