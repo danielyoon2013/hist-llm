@@ -144,26 +144,32 @@ Every generator was designed to target specific evaluation benchmarks. Conversel
 
 `**` = primary alignment (generator specifically targets this eval) | `*` = secondary alignment | `.` = indirect benefit
 
-### Benchmark x Training Format View
+### Benchmark x Training Format Coverage
 
-Which generators feed each benchmark, broken down by training data format. **Bold** = format directly matching the benchmark's native eval format. `ext` = external dataset retained (GSM8K/MATH).
+Which training data formats cover each evaluation benchmark. **O** = format directly matches the benchmark's native eval format. `o` = additional format coverage from our generators.
 
-| Benchmark | MC | Open-ended | CoT | T/F | Fill-blank | Passage | Ranking |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| MMLU | **A** | A | | A | | | |
-| ARC-Challenge | **A** | A, B | B | A | | | B |
-| GSM8K | | **E**, ext | **E** | | E | | |
-| HellaSwag | **F** | | | | | | |
-| BoolQ | A, C | A, C | C | **A, C** | | **C** | |
-| PIQA | **F** | | | | | | |
-| WinoGrande | | | | | **F** | | |
-| RACE | **C** | B, C | B, C | | | **C** | B |
-| LAB Eval | **D, H** | H | D | D, H | | | D |
-| LAP Score | D, H | H | D | D, H | | | D |
-| Temp Consistency | D | | D | D | | | D |
-| Anti-H Diag | H | **H** | | H | | | |
+| Benchmark | Type | MC | Open | CoT | T/F | Fill | Passage | Rank |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| MMLU | External | **O** | o | | o | | | |
+| ARC-Challenge | External | **O** | o | o | o | | | o |
+| GSM8K | External | | **O** | **O** | | o | | |
+| HellaSwag | External | **O** | | | | | | |
+| BoolQ | External | o | o | o | **O** | | **O** | |
+| PIQA | External | **O** | | | | | | |
+| WinoGrande | External | | | | | **O** | | |
+| RACE | External | **O** | o | o | | | **O** | o |
+| LAB Eval | Ours | **O** | o | o | o | | | o |
+| LAP Score | Ours | o | o | o | o | | | o |
+| Temp Consistency | Ours | o | | o | o | | | o |
+| Anti-H Diag | Ours | o | **O** | | o | | | |
 
-Reading this table: the MMLU row shows Generator A provides MC, open-ended, and T/F training data that all contribute to MMLU performance, with MC (**bold**) being the format that directly matches MMLU's 4-choice eval format.
+**O** = native eval format match | `o` = supplementary format coverage
+
+**Note on our diagnostic benchmarks (bottom 4 rows):**
+- **LAB Eval** (Look-Ahead Bias) — 5,000 MC questions per period about post-period events. A perfectly isolated model scores 25% (random chance on 4-choice MC).
+- **LAP Score** (Look-Ahead Propensity) — scalar derived from LAB: `(accuracy - 0.25) / 0.75`. 0 = perfect isolation, >0.3 = severe leakage.
+- **Temp Consistency** — direct probes of period awareness ("Who is the current president?").
+- **Anti-H Diag** — measures refusal rate on post-period questions (target: >80% appropriate refusal).
 
 ### Reading the Alignment
 
