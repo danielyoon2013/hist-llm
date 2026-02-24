@@ -70,6 +70,21 @@ Before designing our generators, we first map **what formats existing benchmarks
 
 **Key observation:** The demand is concentrated in MC and open-ended formats, but breadth benchmarks (BoolQ, WinoGrande, RACE) also require T/F, fill-blank, and passage-based formats. Any generator suite that only produces MC questions would leave gaps.
 
+Now, the content tested by these external benchmarks can be naturally classified into generator categories:
+
+| Generator | MMLU | ARC-C | GSM8K | HellaSwag | BoolQ | PIQA | WinoGrande | RACE |
+|-----------|:----:|:-----:|:-----:|:---------:|:-----:|:----:|:----------:|:----:|
+| **A.** Factual QA | O | O | | | O | | | |
+| **B.** Chain-of-Thought | | O | O | | | | | |
+| **C.** Reading Comprehension | | | | O | O | | | O |
+| **D.** Temporal Reasoning | | | | | | | | |
+| **E.** Quantitative | | | O | | | | | |
+| **F.** Sentence Completion | | | | O | | O | O | |
+| **G.** Instruction Following | | | | | | | | O |
+| **H.** Anti-Hallucination | | | | | | | | |
+
+Generators A-C and E-G each serve at least one external benchmark. **D and H have no external benchmark coverage** — they are novel generators designed for our project-specific diagnostic evaluations (LAB Eval, Temporal Consistency, Anti-Hallucination Diagnostic). These are introduced in Section 1c.
+
 ### 1c. Our Response: Generator (Content) x Format Matrix
 
 Now the supply side. Each of our 8 generators produces data in one or more formats, collectively covering every format demanded by the benchmarks above.
@@ -93,32 +108,22 @@ This yields **~25 active (generator, format) cells**, comparable to Phi-4's 50 s
 
 The third dimension is **source** — which corpus collection provides the input text for each generator. Not every source naturally supports every generator. The matrix is sparse by design: forcing math problems from legal texts produces garbage.
 
-**Universal generators** — work well across all collections:
-
 | Generator | Economist | NYT | FT | Newswire | CaseLaw | USPTO | Books | GATT/EurLex |
 |-----------|:---------:|:---:|:--:|:--------:|:-------:|:-----:|:-----:|:-----------:|
 | **A.** Factual QA | O | O | O | O | O | O | O | O |
 | **B.** Chain-of-Thought | O | O | O | O | O | O | O | O |
 | **C.** Reading Comprehension | O | O | O | O | O | O | O | O |
+| **D.** Temporal Reasoning | O | O | O | O | | | | |
+| **E.** Quantitative | O | | O | | | | | O |
 | **F.** Sentence Completion | O | O | O | O | O | O | O | O |
 | **G.** Instruction Following | O | O | O | O | O | O | O | O |
+| **H.** Anti-Hallucination | — | — | — | — | — | — | — | — |
 
-These generators extract questions from any well-formed passage — a news article, a court ruling, or a book chapter all work equally well.
+Three patterns emerge:
 
-**Source-selective generators** — require specific collections for high-quality output:
-
-| Generator | Best Sources | Why |
-|-----------|-------------|-----|
-| **D.** Temporal Reasoning | Economist, NYT, FT, Newswire | News sources are richest for temporal chains, dates, causation sequences ("X happened, then Y followed") |
-| **E.** Quantitative | Economist, FT, GATT/EurLex | Economic/trade sources contain actual numbers — trade statistics, market data, demographics — that ground quantitative reasoning in real figures |
-
-Generating temporal-reasoning data from USPTO patents or generating quantitative problems from fiction produces low-quality, unnatural examples. These generators are deliberately restricted to their strong-fit sources.
-
-**Source-independent generator:**
-
-| Generator | Source | Why |
-|-----------|--------|-----|
-| **H.** Anti-Hallucination | None (prompt-only) | Questions are about post-period events that the model should *not* know. No corpus text is needed — the prompt asks the model to respond to a future event it cannot have seen. |
+- **A, B, C, F, G** are **universal** — they extract questions from any well-formed passage (news, court rulings, books, treaties)
+- **D, E** are **source-selective** — D needs news sources for temporal chains and causation; E needs economic/trade sources for real numbers (trade statistics, market data, demographics). Forcing these generators onto unsuitable collections (e.g., math from patents) produces low-quality output.
+- **H** is **source-independent** — it generates questions about post-period events that the model should *not* know. No corpus text is needed; the prompt alone suffices.
 
 ### 1e. External Datasets Retained
 
