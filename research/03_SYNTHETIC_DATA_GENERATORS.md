@@ -144,6 +144,27 @@ Every generator was designed to target specific evaluation benchmarks. Conversel
 
 `**` = primary alignment (generator specifically targets this eval) | `*` = secondary alignment | `.` = indirect benefit
 
+### Benchmark x Training Format View
+
+Which generators feed each benchmark, broken down by training data format. **Bold** = format directly matching the benchmark's native eval format. `ext` = external dataset retained (GSM8K/MATH).
+
+| Benchmark | MC | Open-ended | CoT | T/F | Fill-blank | Passage | Ranking |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| MMLU | **A** | A | | A | | | |
+| ARC-Challenge | **A** | A, B | B | A | | | B |
+| GSM8K | | **E**, ext | **E** | | E | | |
+| HellaSwag | **F** | | | | | | |
+| BoolQ | A, C | A, C | C | **A, C** | | **C** | |
+| PIQA | **F** | | | | | | |
+| WinoGrande | | | | | **F** | | |
+| RACE | **C** | B, C | B, C | | | **C** | B |
+| LAB Eval | **D, H** | H | D | D, H | | | D |
+| LAP Score | D, H | H | D | D, H | | | D |
+| Temp Consistency | D | | D | D | | | D |
+| Anti-H Diag | H | **H** | | H | | | |
+
+Reading this table: the MMLU row shows Generator A provides MC, open-ended, and T/F training data that all contribute to MMLU performance, with MC (**bold**) being the format that directly matches MMLU's 4-choice eval format.
+
 ### Reading the Alignment
 
 | Benchmark | Primary Generator(s) | What It Validates |
