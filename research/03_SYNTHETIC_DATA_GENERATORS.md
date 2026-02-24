@@ -10,9 +10,10 @@
 
 - [1. The Content x Format x Source Framework](#1-the-content-x-format-x-source-framework)
   - [1a. Three Dimensions](#1a-three-dimensions-of-synthetic-data)
-  - [1b. Content x Format Matrix](#1b-the-content-x-format-matrix)
-  - [1c. Source Mapping](#1c-source-mapping-third-dimension)
-  - [1d. External Datasets Retained](#1d-external-datasets-retained)
+  - [1b. The Demand Side: Benchmark x Format](#1b-the-demand-side-what-external-benchmarks-look-like)
+  - [1c. Our Response: Generator x Format](#1c-our-response-generator-content-x-format-matrix)
+  - [1d. The Source Dimension: Generator x Collection](#1d-the-source-dimension-generator-x-collection)
+  - [1e. External Datasets Retained](#1e-external-datasets-retained)
 - [2. Generator-to-Evaluation Alignment](#2-generator-to-evaluation-alignment)
 - [3. Existing Generators (A, B)](#3-existing-generators-implemented)
 - [4. Standard Generators (C, F, G)](#4-new-generators--standard-c-f-g)
@@ -47,59 +48,79 @@ This framework is motivated by three findings from the literature:
 
 No prior work has formally organized synthetic data generation as a content x format x source matrix. This is a methodological contribution of our paper.
 
-### 1b. The Content x Format Matrix
+### 1b. The Demand Side: What External Benchmarks Look Like
 
-Each cell represents a distinct (generator, format) pair with its own prompt template. Not all cells are active — only natural fits are used.
+Before designing our generators, we first map **what formats existing benchmarks use**. This is the demand side — the evaluation landscape our synthetic data must cover.
 
-```
-                       MC    Open-ended   CoT     T/F    Fill-blank   Passage    Ranking
-                      (4-opt)  (free)    (think) (Y/N+) (cloze)     (w/ text)  (order)
-───────────────────────────────────────────────────────────────────────────────────────────
-A. Factual              *        *                  *
-B. Reasoning                     *          *                                      *
-C. Comprehension        *        *          *                           *
-D. Temporal             *                   *       *                              *
-E. Quantitative                  *          *              *
-F. Completion                                              *
-G. Instruction                   *                                      *
-H. Anti-Halluc          *        *                  *
-───────────────────────────────────────────────────────────────────────────────────────────
-External: GSM8K                  *          *                                   (retained)
-External: MATH                   *          *                                   (retained)
-```
+| Benchmark | Type | MC | Open-ended | CoT | T/F | Fill-blank | Passage-based |
+|-----------|------|:--:|:----------:|:---:|:---:|:----------:|:-------------:|
+| MMLU | External | O | | | | | |
+| ARC-Challenge | External | O | | | | | |
+| GSM8K | External | | O | O | | | |
+| HellaSwag | External | O | | | | | |
+| BoolQ | External | | | | O | | O |
+| PIQA | External | O | | | | | |
+| WinoGrande | External | | | | | O | |
+| RACE | External | O | | | | | O |
+| LAB Eval | Ours | O | | | | | |
+| Temp Consistency | Ours | | O | | | | |
+| Anti-H Diagnostic | Ours | | O | | O | | |
 
-`*` = active cell (has a prompt template and generates data)
+**Reading this table:** Each row is an evaluation benchmark. Each column is a data format. "O" marks the format(s) that benchmark uses. External benchmarks are standard academic benchmarks; "Ours" are diagnostic metrics we designed to measure temporal isolation (see `05_EVALUATION_FRAMEWORK.md` Section 4).
 
-This yields **~25 active cells** from 8 generators x 7 formats, comparable to Phi-4's diversity level but organized systematically rather than ad hoc.
+**Key observation:** The demand is concentrated in MC and open-ended formats, but breadth benchmarks (BoolQ, WinoGrande, RACE) also require T/F, fill-blank, and passage-based formats. Any generator suite that only produces MC questions would leave gaps.
 
-### 1c. Source Mapping (Third Dimension)
+### 1c. Our Response: Generator (Content) x Format Matrix
 
-Not every source naturally supports every generator. The matrix is **sparse** — forcing math problems from legal texts produces garbage. We only generate from natural fits.
+Now the supply side. Each of our 8 generators produces data in one or more formats, collectively covering every format demanded by the benchmarks above.
 
-```
-                   English Corpus    News (NYT/    CaseLaw/     Academic/
-                   (general hist)    Econ/FT)      Patents      Books
-──────────────────────────────────────────────────────────────────────────
-A. Factual              *               *             *            *
-B. Reasoning            *               *             *            *
-C. Comprehension        *               *             *            *
-D. Temporal             *               **            .
-E. Quantitative         .               **            .            .
-F. Completion           *               *             *            *
-G. Instruction          *               *             *            *
-H. Anti-Halluc          *               *             *            *
+| Generator | MC | Open-ended | CoT | T/F | Fill-blank | Passage-based | Ranking | Benchmark Targets |
+|-----------|:--:|:----------:|:---:|:---:|:----------:|:-------------:|:-------:|-------------------|
+| **A.** Factual QA | O | O | | O | | | | MMLU, ARC, BoolQ |
+| **B.** Chain-of-Thought | | O | O | | | | O | ARC, GSM8K |
+| **C.** Reading Comprehension | O | O | O | | | O | | HellaSwag, RACE, BoolQ |
+| **D.** Temporal Reasoning | O | | O | O | | | O | LAB Eval, Temp Consistency |
+| **E.** Quantitative | | O | O | | O | | | GSM8K (complement) |
+| **F.** Sentence Completion | | | | | O | | | HellaSwag, WinoGrande |
+| **G.** Instruction Following | | O | | | | O | | RACE, general |
+| **H.** Anti-Hallucination | O | O | | O | | | | LAB Eval, Anti-H Diagnostic |
+| *GSM8K (retained)* | | O | O | | | | | GSM8K |
+| *MATH (retained)* | | O | O | | | | | GSM8K |
 
-** = natural strong fit    * = good fit    . = weak/forced (avoid)
-```
+This yields **~25 active (generator, format) cells**, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
 
-**Key design decisions from source mapping:**
+### 1d. The Source Dimension: Generator x Collection
 
-- **Generator D (Temporal):** Primarily News sources — richest for temporal chains, dates, causation
-- **Generator E (Quantitative):** Primarily News + economic corpus — mine documents with actual numbers (trade statistics, market data, demographics)
-- **Generators A, B, C, G:** Universal — work well across all sources
-- **Generator H:** Source-independent — questions are about post-period events, not derived from source text
+The third dimension is **source** — which corpus collection provides the input text for each generator. Not every source naturally supports every generator. The matrix is sparse by design: forcing math problems from legal texts produces garbage.
 
-### 1d. External Datasets Retained
+**Universal generators** — work well across all collections:
+
+| Generator | Economist | NYT | FT | Newswire | CaseLaw | USPTO | Books | GATT/EurLex |
+|-----------|:---------:|:---:|:--:|:--------:|:-------:|:-----:|:-----:|:-----------:|
+| **A.** Factual QA | O | O | O | O | O | O | O | O |
+| **B.** Chain-of-Thought | O | O | O | O | O | O | O | O |
+| **C.** Reading Comprehension | O | O | O | O | O | O | O | O |
+| **F.** Sentence Completion | O | O | O | O | O | O | O | O |
+| **G.** Instruction Following | O | O | O | O | O | O | O | O |
+
+These generators extract questions from any well-formed passage — a news article, a court ruling, or a book chapter all work equally well.
+
+**Source-selective generators** — require specific collections for high-quality output:
+
+| Generator | Best Sources | Why |
+|-----------|-------------|-----|
+| **D.** Temporal Reasoning | Economist, NYT, FT, Newswire | News sources are richest for temporal chains, dates, causation sequences ("X happened, then Y followed") |
+| **E.** Quantitative | Economist, FT, GATT/EurLex | Economic/trade sources contain actual numbers — trade statistics, market data, demographics — that ground quantitative reasoning in real figures |
+
+Generating temporal-reasoning data from USPTO patents or generating quantitative problems from fiction produces low-quality, unnatural examples. These generators are deliberately restricted to their strong-fit sources.
+
+**Source-independent generator:**
+
+| Generator | Source | Why |
+|-----------|--------|-----|
+| **H.** Anti-Hallucination | None (prompt-only) | Questions are about post-period events that the model should *not* know. No corpus text is needed — the prompt asks the model to respond to a future event it cannot have seen. |
+
+### 1e. External Datasets Retained
 
 Two external datasets are retained alongside our 8 corpus-derived generators:
 
