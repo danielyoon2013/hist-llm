@@ -129,25 +129,20 @@ Every generator was designed to target specific evaluation benchmarks. Conversel
 
 ### Alignment Matrix
 
-```
-                        MMLU  ARC-C  GSM8K  Hella  BoolQ  PIQA  Wino  RACE  LAB   LAP   Temp   Anti-H
-                                                   Swag                       Eval        Consist Diag
-────────────────────────────────────────────────────────────────────────────────────────────────────────
-A. Factual               **    **                   *                               .
-B. Reasoning                    *                                           **
-C. Comprehension                                     *                      **
-D. Temporal                                                                       **    **     **
-E. Quantitative                        **
-F. Completion                                 **            *     *
-G. Instruction                                                              .
-H. Anti-Halluc                                                                    **           **     **
-External: GSM8K                        **
-External: MATH                         *
-```
+| Generator | MMLU | ARC-C | GSM8K | HellaSwag | BoolQ | PIQA | Wino | RACE | LAB Eval | LAP | Temp Consist | Anti-H Diag |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **A. Factual** | `**` | `**` | | | `*` | | | | | `.` | | |
+| **B. Reasoning** | | `*` | | | | | | `**` | | | | |
+| **C. Comprehension** | | | | | `*` | | | `**` | | | | |
+| **D. Temporal** | | | | | | | | | `**` | `**` | `**` | |
+| **E. Quantitative** | | | `**` | | | | | | | | | |
+| **F. Completion** | | | | `**` | | `*` | `*` | | | | | |
+| **G. Instruction** | | | | | | | | `.` | | | | |
+| **H. Anti-Halluc** | | | | | | | | | `**` | | `**` | `**` |
+| *External: GSM8K* | | | `**` | | | | | | | | | |
+| *External: MATH* | | | `*` | | | | | | | | | |
 
-`**` = primary alignment (generator specifically targets this eval)
-`*` = secondary alignment (generator contributes to this capability)
-`.` = indirect benefit
+`**` = primary alignment (generator specifically targets this eval) | `*` = secondary alignment | `.` = indirect benefit
 
 ### Reading the Alignment
 
