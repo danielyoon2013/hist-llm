@@ -13,7 +13,6 @@
   - [1b. Content x Format Matrix](#1b-the-content-x-format-matrix)
   - [1c. Source Mapping](#1c-source-mapping-third-dimension)
   - [1d. External Datasets Retained](#1d-external-datasets-retained)
-  - [1e. Benchmark Format Reference](#1e-benchmark-format-reference--our-output-format)
 - [2. Generator-to-Evaluation Alignment](#2-generator-to-evaluation-alignment)
 - [3. Existing Generators (A, B)](#3-existing-generators-implemented)
 - [4. Standard Generators (C, F, G)](#4-new-generators--standard-c-f-g)
@@ -122,135 +121,6 @@ Our corpus (news, law, books) rarely contains multi-step math in word-problem fo
 | Temporal | Neutral (math doesn't change) | Period-specific (actual figures from that era) |
 | Capability tested | Abstract arithmetic | Domain-grounded quantitative reasoning |
 
-### 1e. Benchmark Format Reference / Our Output Format
-
-To validate that our generators produce training data matching the evaluation benchmarks, here is what each external benchmark looks like in nanochat format, alongside what our corresponding generator produces.
-
-All nanochat MC questions use `render_mc()` from `nanochat/tasks/common.py`:
-```
-Multiple Choice question: [QUESTION]
-- [choice text]=[letter]
-- [choice text]=[letter]
-...
-Respond only with the letter of the correct answer.
-```
-The letter comes AFTER the choice (better binding for small models). No whitespace before the letter (critical for tokenizer consistency).
-
-#### MMLU / ARC (Evaluation) vs. Generator A (Training)
-
-**MMLU eval format** (from `nanochat/tasks/mmlu.py`):
-```
-User:  Multiple Choice question: What was the primary cause of the Peloponnesian War?
-       - Athenian imperialism=A
-       - Spartan aggression=B
-       - Persian invasion=C
-       - Economic recession=D
-
-       Respond only with the letter of the correct answer.
-Asst:  A
-```
-
-**Our Generator A output** (MC variant — training format):
-```json
-[
-  {"role": "user", "content": "Multiple Choice question: According to the passage, what was the primary consequence of the 1973 oil embargo?\n- Stagflation across Western economies=A\n- Collapse of the OPEC cartel=B\n- Rapid industrialization of oil-producing nations=C\n- Immediate shift to renewable energy sources=D\n\nRespond only with the letter of the correct answer."},
-  {"role": "assistant", "content": "A"}
-]
-```
-
-**Our Generator A output** (open-ended variant — existing format):
-```json
-[
-  {"role": "user", "content": "What rationale did the court provide for ruling that the jury's verdict should not be disturbed?"},
-  {"role": "assistant", "content": "The court reasoned that the jury's verdict was within the range of testimony provided by both parties..."}
-]
-```
-
-#### RACE / BoolQ (Evaluation) vs. Generator C (Training)
-
-**RACE eval format** (from `nanochat/tasks/race.py`):
-```
-User:  Multiple Choice question: Read the following passage and answer the question.
-
-       Passage: The oil embargo imposed by OAPEC in 1973 had far-reaching consequences...
-
-       What was the primary economic consequence of the 1973 oil embargo?
-       - Stagflation across Western economies=A
-       - Collapse of the OPEC cartel=B
-       - Rapid industrialization=C
-       - Shift to renewables=D
-
-       Respond only with the letter of the correct answer.
-Asst:  A
-```
-
-**BoolQ eval format** (from `nanochat/tasks/boolq.py`):
-```
-User:  Multiple Choice question: Passage: The EEC was established by the Treaty of Rome in 1957...
-
-       Was the EEC established before 1960?
-       - No=A
-       - Yes=B
-
-       Respond only with the letter of the correct answer.
-Asst:  B
-```
-
-**Our Generator C output** (passage-based QA — training format):
-```json
-[
-  {"role": "user", "content": "Read the following passage and answer the question.\n\nPassage: The oil embargo imposed by OAPEC in 1973 had far-reaching consequences for Western economies. Crude oil prices quadrupled from $3 to $12 per barrel...\n\nQuestion: What was the primary economic consequence of the 1973 oil embargo according to the passage?"},
-  {"role": "assistant", "content": "According to the passage, the primary consequence was stagflation across Western economies, driven by the quadrupling of oil prices from $3 to $12 per barrel."}
-]
-```
-
-#### GSM8K (Evaluation) vs. Generator E (Training)
-
-**GSM8K eval format** (from `nanochat/tasks/gsm8k.py`):
-```
-User:  Janet's ducks lay 16 eggs per day. She eats three for breakfast and bakes
-       muffins with four. She sells the rest for $2 each. How much does she make daily?
-Asst:  Janet sells 16 - 3 - 4 = <<16-3-4=9>>9 duck eggs a day.
-       She makes 9 * 2 = <<9*2=18>>$18 every day.
-       #### 18
-```
-Note: GSM8K uses `<<expr=result>>` calculator tool calls and `#### answer` format.
-
-**Our Generator E output** (corpus-grounded quantitative — training format):
-```json
-[
-  {"role": "user", "content": "According to this 1957 trade report, Country X exported $240 million worth of goods. If exports grew by 8% annually, what was the approximate export value in 1962?"},
-  {"role": "assistant", "content": "<think>\nStep 1: We need compound growth over 5 years (1957 to 1962).\nStep 2: Formula: Final = Initial * (1 + rate)^years\nStep 3: Final = $240M * (1.08)^5 = $240M * 1.469 = $352.6M\n</think>\nThe approximate export value in 1962 was $352.6 million."}
-]
-```
-Key difference: GSM8K uses invented numbers; ours uses real historical figures from the corpus.
-
-#### HellaSwag (Evaluation) vs. Generator F (Training)
-
-**HellaSwag eval format** (from `nanochat/tasks/hellaswag.py`):
-```
-User:  Multiple Choice question: A woman is outside with a bucket. She pours water from the bucket...
-       - ...onto the car and begins scrubbing with a sponge=A
-       - ...into a lake nearby=B
-       - ...and drinks it quickly=C
-       - ...onto a fire to extinguish it=D
-
-       Respond only with the letter of the correct answer.
-Asst:  A
-```
-
-**Our Generator F output** (sentence completion — training format):
-```json
-[
-  {"role": "user", "content": "Multiple Choice question: The following is the beginning of a passage from The Economist published in 1973:\n\"The decision to float the pound sterling marked a turning point in British economic policy. The immediate effect was...\"\n- a sharp depreciation against the dollar, dropping 10% within weeks=A\n- an unexpected strengthening as markets gained confidence=B\n- a return to the gold standard within six months=C\n- the adoption of the euro as Britain's primary currency=D\n\nRespond only with the letter of the correct answer."},
-  {"role": "assistant", "content": "A"}
-]
-```
-
-#### No External Equivalent vs. Generators D and H
-
-**Generator D** (Temporal Reasoning) and **Generator H** (Anti-Hallucination) have no direct external benchmark equivalents — they are unique to this project. See Sections 5 for full output examples.
-
 ---
 
 ## 2. Generator-to-Evaluation Alignment
@@ -357,6 +227,50 @@ Text:
 **Strengths:** High volume, covers all source types, analytically focused.
 **Limitations:** Open-ended format only (no MC/T/F variants yet), no difficulty stratification.
 
+#### Format Comparison: MMLU / ARC vs. Generator A
+
+| | **MMLU / ARC** (external eval) | **Generator A** (our synthetic data) |
+|---|---|---|
+| Source | Hendrycks et al., pre-existing academic benchmark | Generated from our historical corpus via GPT-4o-mini |
+| Format | 4-choice MC via `render_mc()` | 4-choice MC (identical) + open-ended variant |
+| Content | General academic knowledge across 57 subjects | Historical facts from period-specific documents |
+
+**MMLU example** (eval format, from `nanochat/tasks/mmlu.py`):
+```
+User:  Multiple Choice question: What was the primary cause of the Peloponnesian War?
+       - Athenian imperialism=A
+       - Spartan aggression=B
+       - Persian invasion=C
+       - Economic recession=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**Generator A example** (our MC training format):
+```
+User:  Multiple Choice question: According to the passage, what was the primary
+       consequence of the 1973 oil embargo?
+       - Stagflation across Western economies=A
+       - Collapse of the OPEC cartel=B
+       - Rapid industrialization of oil-producing nations=C
+       - Immediate shift to renewable energy sources=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**Generator A example** (our open-ended training format):
+```
+User:  What rationale did the court provide for ruling that the jury's verdict
+       should not be disturbed?
+Asst:  The court reasoned that the jury's verdict was within the range of
+       testimony provided by both parties...
+```
+
+> **Match:** MC variant uses identical `render_mc()` format (`- choice=LETTER`).
+> **Difference:** MMLU draws from general academic knowledge; ours is grounded in historical corpus documents from the target period.
+
 ---
 
 ### Generator B: Chain-of-Thought Reasoning
@@ -406,6 +320,39 @@ CoT examples are wrapped in `<think>` tags during conversion:
 | Same chunking as QA | 6,000 chars / 300 overlap |
 | `<think>` tag wrapping | Applied in `run_direct.py` lines 284-289 |
 
+#### Format Comparison: HotpotQA vs. Generator B
+
+| | **HotpotQA** (external multi-hop reasoning) | **Generator B** (our synthetic data) |
+|---|---|---|
+| Source | Yang et al., Wikipedia-derived questions | Generated from our historical corpus via GPT-4o-mini |
+| Format | Open-ended multi-hop QA with decomposition | CoT with `<think>` tags + explicit reasoning steps |
+| Content | Modern Wikipedia facts requiring 2+ document hops | Historical analysis requiring multi-step reasoning |
+
+**HotpotQA example** (external dataset):
+```
+User:  Were Scott Derrickson and Ed Wood of the same nationality?
+Asst:  Scott Derrickson is American, born in Denver, Colorado.
+       Ed Wood was also American, born in Poughkeepsie, New York.
+       So yes, they share the same nationality.
+```
+
+**Generator B example** (our CoT training format):
+```
+User:  How did the trade deficit contribute to the currency devaluation?
+Asst:  <think>
+       Step 1: The trade deficit widened from $X to $Y over the period...
+       Step 2: This put downward pressure on the currency as foreign
+               exchange reserves depleted...
+       Step 3: The central bank's reserves were insufficient to defend
+               the peg...
+       </think>
+       The trade deficit directly contributed to the devaluation by
+       exhausting foreign exchange reserves needed to maintain the peg.
+```
+
+> **Match:** Both require multi-step reasoning connecting multiple facts.
+> **Difference:** HotpotQA uses Wikipedia passages (56.6% temporally contaminated for 1950-1999); ours uses explicit `<think>` tags for structured reasoning chains grounded in period-specific historical corpus text.
+
 ---
 
 ## 4. New Generators — Standard (C, F, G)
@@ -454,6 +401,57 @@ The passage is included in the **training example**, not just used for generatio
 ]
 ```
 
+#### Format Comparison: RACE / BoolQ vs. Generator C
+
+| | **RACE / BoolQ** (external eval) | **Generator C** (our synthetic data) |
+|---|---|---|
+| Source | RACE: English exams; BoolQ: Wikipedia passages | Generated from our historical corpus via GPT-4o-mini |
+| Format | Passage + MC question / True-False | Passage + MC, open-ended, CoT, or True-False |
+| Content | Modern reading comprehension passages | Historical documents from the target period |
+
+**RACE example** (eval format, from `nanochat/tasks/race.py`):
+```
+User:  Multiple Choice question: Read the following passage and answer the question.
+
+       Passage: The oil embargo imposed by OAPEC in 1973 had far-reaching
+       consequences for Western economies...
+
+       What was the primary economic consequence of the 1973 oil embargo?
+       - Stagflation across Western economies=A
+       - Collapse of the OPEC cartel=B
+       - Rapid industrialization=C
+       - Shift to renewables=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**BoolQ example** (eval format, from `nanochat/tasks/boolq.py`):
+```
+User:  Passage: The EEC was established by the Treaty of Rome in 1957...
+
+       Was the EEC established before 1960?
+Asst:  True
+```
+
+**Generator C example** (our passage-based QA training format):
+```
+User:  Read the following passage and answer the question.
+
+       Passage: The oil embargo imposed by OAPEC in 1973 had far-reaching
+       consequences for Western economies. Crude oil prices quadrupled
+       from $3 to $12 per barrel...
+
+       Question: What was the primary economic consequence of the 1973
+       oil embargo according to the passage?
+Asst:  According to the passage, the primary consequence was stagflation
+       across Western economies, driven by the quadrupling of oil prices
+       from $3 to $12 per barrel.
+```
+
+> **Match:** All include the source passage in the prompt, requiring comprehension of given text.
+> **Difference:** RACE/BoolQ passages come from English exams and Wikipedia; ours are real historical corpus documents from the target period.
+
 ---
 
 ### Generator F: Sentence Completion
@@ -487,6 +485,45 @@ Return JSON:
 - Truncate source documents at sentence boundaries (50-70% through the passage)
 - The actual text continuation is the ground truth (no GPT generation needed for the correct answer)
 - Include source type and year metadata for style-appropriate generation
+
+#### Format Comparison: HellaSwag vs. Generator F
+
+| | **HellaSwag** (external eval) | **Generator F** (our synthetic data) |
+|---|---|---|
+| Source | Zellers et al., ActivityNet captions | Generated from our historical corpus via GPT-4o-mini |
+| Format | 4-choice MC sentence completion | 4-choice MC sentence completion (identical) |
+| Content | Modern activity descriptions | Historical passages truncated at sentence boundaries |
+
+**HellaSwag example** (eval format, from `nanochat/tasks/hellaswag.py`):
+```
+User:  Multiple Choice question: A woman is outside with a bucket. She pours
+       water from the bucket...
+       - ...onto the car and begins scrubbing with a sponge=A
+       - ...into a lake nearby=B
+       - ...and drinks it quickly=C
+       - ...onto a fire to extinguish it=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+**Generator F example** (our sentence completion training format):
+```
+User:  Multiple Choice question: The following is the beginning of a passage
+       from The Economist published in 1973:
+       "The decision to float the pound sterling marked a turning point in
+       British economic policy. The immediate effect was..."
+       - a sharp depreciation against the dollar, dropping 10% within weeks=A
+       - an unexpected strengthening as markets gained confidence=B
+       - a return to the gold standard within six months=C
+       - the adoption of the euro as Britain's primary currency=D
+
+       Respond only with the letter of the correct answer.
+Asst:  A
+```
+
+> **Match:** Both are 4-choice MC sentence completion tasks using `render_mc()` format.
+> **Difference:** HellaSwag uses modern activity descriptions; ours uses real historical passages where the correct continuation is the actual corpus text. Wrong options include deliberate anachronisms (e.g., "adoption of the euro" for a 1973 passage).
 
 ---
 
@@ -529,6 +566,37 @@ Return JSON:
 Text:
 {text}"""
 ```
+
+#### Format Comparison: SmolTalk / Alpaca vs. Generator G
+
+| | **SmolTalk / Alpaca** (external instruct data) | **Generator G** (our synthetic data) |
+|---|---|---|
+| Source | Allal et al. / Stanford, web-sourced conversations | Generated from our historical corpus via GPT-4o-mini |
+| Format | Open-ended instruction-response pairs | Open-ended instruction-response pairs (identical) |
+| Content | Modern general-purpose topics | Historical documents from the target period |
+
+**SmolTalk example** (external instruction dataset, 32.6% temporally contaminated):
+```
+User:  Summarize the key differences between TCP and UDP protocols.
+Asst:  TCP (Transmission Control Protocol) is connection-oriented, ensuring
+       reliable delivery through acknowledgments and retransmission.
+       UDP (User Datagram Protocol) is connectionless, offering faster
+       but unreliable delivery without error checking...
+```
+
+**Generator G example** (our instruction-following training format):
+```
+User:  Summarize this 1973 Economist article on the oil embargo in 3 bullet
+       points.
+Asst:  - OAPEC imposed an oil embargo on nations supporting Israel in the
+         1973 war, targeting the US and Netherlands
+       - Crude oil prices quadrupled from $3 to $12 per barrel within months
+       - The resulting stagflation forced Western economies to reconsider
+         energy dependency on Middle Eastern oil producers
+```
+
+> **Match:** Both train instruction compliance: structured responses, format adherence (bullet points, summaries, lists, tables).
+> **Difference:** SmolTalk uses modern general-purpose topics (32.6% temporally contaminated for 1950-1999); ours is grounded entirely in period-appropriate historical documents. Generator G is designed to replace SmolTalk.
 
 ---
 
@@ -705,6 +773,81 @@ def sample_temporal_set(period_shards, level, sources):
 | Level 2 (cross-doc) | 35% | Medium — teaches cross-referencing |
 | Level 3 (multi-doc) | 15% | Hard — timeline and trend reasoning |
 
+#### Format Comparison: TimE Benchmark vs. Generator D
+
+Generator D is **unique to this project**. No existing training dataset systematically covers temporal reasoning grounded in a historical corpus. The closest reference is **TimE** (Chu et al., arXiv:2505.12891), whose 3-level hierarchy we adopt.
+
+| | **TimE** (external benchmark) | **Generator D** (our synthetic data) |
+|---|---|---|
+| Source | Chu et al., Wikipedia/News/Dialogue | Generated from our historical corpus via GPT-4o-mini |
+| Format | Open-ended temporal QA at 3 levels | MC, CoT, T/F, Ranking at 3 levels (identical hierarchy) |
+| Content | General temporal facts | Historical events from period-specific corpus documents |
+
+**TimE example** (external benchmark, Level 1 — date extraction):
+```
+Q:  When was the North Atlantic Treaty signed?
+A:  April 4, 1949
+```
+
+**TimE example** (external benchmark, Level 2 — cross-document):
+```
+Q:  What major international organization was established in the decade
+    before the Korean War began?
+A:  The United Nations (1945), approximately 5 years before the Korean
+    War (1950)
+```
+
+**Generator D example** (our Level 1, MC format):
+```
+User:  Multiple Choice question: When did the General Agreement on Tariffs
+       and Trade (GATT) come into effect?
+       - 1944=A
+       - 1947=B
+       - 1950=C
+       - 1952=D
+
+       Respond only with the letter of the correct answer.
+Asst:  B
+```
+
+**Generator D example** (our Level 2, CoT format):
+```
+User:  The Economist reported rising oil prices in early 1973, while
+       the NYT covered wage negotiations at US automakers the same
+       year. How might the oil price increase have affected the
+       automakers' labor negotiations?
+Asst:  <think>
+       Step 1: Rising oil prices increased manufacturing costs for
+               automakers...
+       Step 2: Higher costs squeezed profit margins, giving management
+               less room for wage increases...
+       Step 3: Workers faced inflation but employers faced shrinking
+               margins...
+       </think>
+       The oil price increases likely hardened management positions in
+       labor negotiations, as automakers faced simultaneous cost
+       pressures and demand uncertainty.
+```
+
+**Generator D example** (our Level 3, Ranking format):
+```
+User:  Arrange the following events in chronological order:
+       1. Formation of the European Economic Community
+       2. The Marshall Plan announcement
+       3. The Treaty of Rome
+       4. Creation of the OEEC
+
+       List them from earliest to latest.
+Asst:  From earliest to latest:
+       1. The Marshall Plan announcement (June 1947)
+       2. Creation of the OEEC (April 1948)
+       3. The Treaty of Rome (March 1957)
+       4. Formation of the EEC (January 1958)
+```
+
+> **Match:** Both use a 3-level temporal reasoning hierarchy (basic -> cross-document -> complex).
+> **Difference:** TimE tests general temporal knowledge; ours is grounded in specific historical documents from the target period, with questions derivable only from the source text.
+
 ---
 
 ### Generator E: Corpus-Grounded Quantitative Reasoning
@@ -811,6 +954,47 @@ def validate_math_answer(problem_json):
 | **NYT** | Population stats, election results, casualty figures, budgets |
 | **Newswire** | Commodity prices, production volumes, bilateral trade |
 | **GATT/EurLex** | Tariff rates, regulatory thresholds, quota figures |
+
+#### Format Comparison: GSM8K vs. Generator E
+
+| | **GSM8K** (external eval) | **Generator E** (our synthetic data) |
+|---|---|---|
+| Source | Cobbe et al., curated math word problems | Generated from our historical corpus via GPT-4o-mini |
+| Format | Open-ended with `<<expr=result>>` calculator notation | CoT with `<think>` tags + fill-blank variant |
+| Numbers | Invented ("Sally has 5 marbles") | Real historical figures ("1957 exports: $240M") |
+
+**GSM8K example** (eval format, from `nanochat/tasks/gsm8k.py`):
+```
+User:  Janet's ducks lay 16 eggs per day. She eats three for breakfast
+       and bakes muffins with four. She sells the rest for $2 each.
+       How much does she make daily?
+Asst:  Janet sells 16 - 3 - 4 = <<16-3-4=9>>9 duck eggs a day.
+       She makes 9 * 2 = <<9*2=18>>$18 every day.
+       #### 18
+```
+
+**Generator E example** (our CoT training format):
+```
+User:  According to this 1957 trade report, Country X exported $240
+       million worth of goods. If exports grew by 8% annually, what
+       was the approximate export value in 1962?
+Asst:  <think>
+       Step 1: We need compound growth over 5 years (1957 to 1962).
+       Step 2: Formula: Final = Initial * (1 + rate)^years
+       Step 3: Final = $240M * (1.08)^5 = $240M * 1.469 = $352.6M
+       </think>
+       The approximate export value in 1962 was $352.6 million.
+```
+
+**Generator E example** (our fill-blank training format):
+```
+User:  In 1973, oil prices rose from $3 per barrel to $12 per barrel.
+       This represents a ___% increase.
+Asst:  300% increase. Calculation: ($12 - $3) / $3 * 100 = 300%.
+```
+
+> **Match:** Both require multi-step mathematical reasoning with step-by-step solutions.
+> **Difference:** GSM8K uses invented numbers and `<<expr=result>>` calculator notation; ours uses real historical figures from corpus documents and `<think>` tags. GSM8K tests abstract math; Generator E tests domain-grounded quantitative reasoning.
 
 ---
 
@@ -960,6 +1144,47 @@ Critical: avoid repetitive refusal templates. The prompt explicitly requests var
 8. "As of {end_year}, [X] had not yet occurred. The state of [related field] at that time was..."
 9. "I don't have reliable information about [X]. Based on what was known up to {end_year}..."
 10. "That's beyond what I can speak to. Up to {end_year}, the situation was..."
+
+#### Format Comparison: R-Tuning vs. Generator H
+
+Generator H is **unique to this project**. No existing training dataset systematically teaches temporal knowledge boundaries. The closest academic reference is **R-Tuning** (Zhang et al., NeurIPS 2023), which showed that refusal training significantly reduces hallucination.
+
+| | **R-Tuning** (academic concept) | **Generator H** (our synthetic data) |
+|---|---|---|
+| Source | Zhang et al., general uncertainty training | Our design, period-boundary enforcement |
+| Format | Generic refusal when uncertain | Temporal refusal + pre-period context |
+| Content | "I don't know" for unknown facts | "Beyond my knowledge period" + what WAS known |
+
+**R-Tuning concept** (generic refusal training):
+```
+User:  What is the quantum spin Hall effect?
+Asst:  I'm not certain about this topic and don't want to provide
+       inaccurate information.
+```
+
+**Generator H example** (our open-ended refusal, post-period question):
+```
+User:  What impact did the iPhone have on the telecommunications industry?
+Asst:  I don't have information about the iPhone, as my knowledge
+       covers the period up to 1999. As of that time, the mobile phone
+       industry was rapidly evolving with Nokia, Motorola, and Ericsson
+       as market leaders. WAP-enabled phones were beginning to bring
+       basic internet access to mobile devices.
+```
+
+**Generator H example** (our boundary probe, partial knowledge):
+```
+User:  Was the European single currency successful?
+Asst:  As of 1999, the euro had just been introduced as an accounting
+       currency on January 1, 1999, with 11 EU member states
+       participating. Physical euro banknotes and coins had not yet
+       entered circulation (planned for 2002). It is too early for me
+       to assess the long-term success of the project, as the currency
+       was still in its initial phase.
+```
+
+> **Match:** Both train the model to refuse gracefully when it lacks knowledge.
+> **Difference:** R-Tuning teaches generic uncertainty; ours teaches specific temporal boundaries — the model learns WHERE its knowledge stops (at the period end year) and provides relevant pre-period context in every refusal.
 
 ---
 
