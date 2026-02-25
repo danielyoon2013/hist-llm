@@ -68,6 +68,10 @@ def get_paths(period: str):
         "LAB_scores_dir": period_data / "posttraining_data" / "LAB_scores",
         "lab_eval_dir": period_data / "posttraining_data" / "eval",
         "synthetic_dir": period_data / "posttraining_data" / "synthetic",
+        "generators_dir": period_data / "posttraining_data" / "synthetic" / "by_generator",
+        "quality_dir": period_data / "posttraining_data" / "quality",
+        "validated_dir": period_data / "posttraining_data" / "quality" / "validated",
+        "deduped_dir": period_data / "posttraining_data" / "quality" / "deduped",
         "metadata_index": period_data / "posttraining_data" / "synthetic" / "document_metadata.parquet",
 
         # Shared instruct datasets (not period-specific)

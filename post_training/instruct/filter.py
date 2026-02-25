@@ -49,15 +49,20 @@ BATCH_CHUNK_SIZE = 50000
 # Dataset resolution
 # ---------------------------------------------------------------------------
 
-def get_datasets(paths, corpus_only=False):
+def get_datasets(paths, corpus_only=False, input_dir=None):
     """
     Return list of (dataset_name, input_path) tuples to process.
 
     Args:
         paths: Period paths from get_paths()
         corpus_only: If True, return only corpus Q&A. If False, return instruct datasets.
+        input_dir: If provided, scan this directory for all *.jsonl files instead.
     """
-    if corpus_only:
+    if input_dir:
+        from pathlib import Path
+        input_dir = Path(input_dir)
+        return [(f.stem, f) for f in sorted(input_dir.glob("*.jsonl"))]
+    elif corpus_only:
         return [("corpus", paths["hist_corpus_qa_output"])]
     else:
         return [(name, INSTRUCT_DIR / f"{name}.jsonl") for name in INSTRUCT_DATASETS]
@@ -95,10 +100,10 @@ Respond with JSON: {{"keep": true}} if the conversation only uses knowledge avai
 # Dry run: classify a few examples in real-time
 # ---------------------------------------------------------------------------
 
-def dry_run(period, corpus_only=False):
+def dry_run(period, corpus_only=False, input_dir=None):
     paths = get_paths(period)
     end_year = paths["end_year"]
-    datasets = get_datasets(paths, corpus_only)
+    datasets = get_datasets(paths, corpus_only, input_dir=input_dir)
 
     for dataset_name, input_path in datasets:
         if not input_path.exists():
@@ -123,13 +128,13 @@ def dry_run(period, corpus_only=False):
 # Step 1: Create and submit batch requests
 # ---------------------------------------------------------------------------
 
-def submit_filter_batch(period, corpus_only=False):
+def submit_filter_batch(period, corpus_only=False, input_dir=None):
     paths = get_paths(period)
     end_year = paths["end_year"]
     batch_dir = paths["posttraining_dir"] / "batch_temp"
     os.makedirs(batch_dir, exist_ok=True)
 
-    datasets = get_datasets(paths, corpus_only)
+    datasets = get_datasets(paths, corpus_only, input_dir=input_dir)
 
     for dataset_name, input_path in datasets:
         if not input_path.exists():
@@ -181,10 +186,10 @@ def submit_filter_batch(period, corpus_only=False):
 # Step 2: Check batch status
 # ---------------------------------------------------------------------------
 
-def check_batches(period, corpus_only=False):
+def check_batches(period, corpus_only=False, input_dir=None):
     paths = get_paths(period)
     batch_dir = paths["posttraining_dir"] / "batch_temp"
-    datasets = get_datasets(paths, corpus_only)
+    datasets = get_datasets(paths, corpus_only, input_dir=input_dir)
 
     for dataset_name, _ in datasets:
         id_file = batch_dir / f"{dataset_name}_batch_ids.txt"
@@ -203,7 +208,7 @@ def check_batches(period, corpus_only=False):
 # Step 3: Download results and filter
 # ---------------------------------------------------------------------------
 
-def process_batch_results(period, corpus_only=False):
+def process_batch_results(period, corpus_only=False, input_dir=None):
     paths = get_paths(period)
     batch_dir = paths["posttraining_dir"] / "batch_temp"
     filtered_dir = paths["final_filtered_dir"]
@@ -213,7 +218,7 @@ def process_batch_results(period, corpus_only=False):
     os.makedirs(removed_dir, exist_ok=True)
     os.makedirs(scores_dir, exist_ok=True)
 
-    datasets = get_datasets(paths, corpus_only)
+    datasets = get_datasets(paths, corpus_only, input_dir=input_dir)
 
     for dataset_name, input_path in datasets:
         id_file = batch_dir / f"{dataset_name}_batch_ids.txt"
@@ -308,6 +313,8 @@ Examples:
     parser.add_argument("--period", type=str, required=True, choices=list(PERIODS.keys()))
     parser.add_argument("--corpus", action="store_true",
                         help="Filter corpus Q&A instead of external instruct datasets")
+    parser.add_argument("--input-dir", type=str, default=None,
+                        help="Custom input directory with *.jsonl files (e.g. quality/deduped/)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Test classify 5 examples in real-time")
     parser.add_argument("--submit", action="store_true",
@@ -330,14 +337,16 @@ Examples:
     print(f"Filtered output dir: {paths['final_filtered_dir']}")
     print(f"Removed output dir: {paths['final_removed_dir']}")
 
+    input_dir = args.input_dir
+
     if args.dry_run:
-        dry_run(args.period, corpus_only=args.corpus)
+        dry_run(args.period, corpus_only=args.corpus, input_dir=input_dir)
     elif args.submit:
-        submit_filter_batch(args.period, corpus_only=args.corpus)
+        submit_filter_batch(args.period, corpus_only=args.corpus, input_dir=input_dir)
     elif args.check:
-        check_batches(args.period, corpus_only=args.corpus)
+        check_batches(args.period, corpus_only=args.corpus, input_dir=input_dir)
     elif args.process:
-        process_batch_results(args.period, corpus_only=args.corpus)
+        process_batch_results(args.period, corpus_only=args.corpus, input_dir=input_dir)
     else:
         print("\nChoose an action:")
         print("  --dry-run   : Test classify 5 examples in real-time")
