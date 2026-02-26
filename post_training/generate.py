@@ -10,6 +10,9 @@ Usage:
 
     # Metadata-based generators (D, H) don't need --max-docs
     python -m src.post_training.generate --period 1900_1949 --generators D H
+
+Each generator produces one JSONL file per supported format:
+    gen_a_factual_mc4.jsonl, gen_a_factual_open.jsonl, etc.
 """
 
 import argparse
@@ -41,14 +44,18 @@ def main():
 
     registry = get_generator_registry()
 
+    total_files = 0
+    total_conversations = 0
+
     for gen_key in args.generators:
         gen_cls = registry[gen_key]
         gen = gen_cls()
         print(f"\n{'='*70}")
         print(f"Running Generator {gen_key}: {gen.name}")
+        print(f"Supported formats: {list(gen.SUPPORTED_FORMATS)}")
         print(f"{'='*70}")
 
-        output_path = gen.run(
+        output_paths = gen.run(
             period=args.period,
             collections=args.collections,
             max_workers=args.max_workers,
@@ -57,13 +64,22 @@ def main():
             overlap=args.overlap,
         )
 
-        if output_path:
-            print(f"Output: {output_path}")
+        if output_paths:
+            for fmt, path in output_paths.items():
+                total_files += 1
+                # Count lines for summary
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        count = sum(1 for _ in f)
+                    total_conversations += count
+                except Exception:
+                    pass
         else:
             print(f"Generator {gen_key} produced no output.")
 
     print(f"\n{'='*70}")
-    print("All generators complete.")
+    print(f"All generators complete.")
+    print(f"Total: {total_files} output files, {total_conversations:,} conversations")
 
 
 if __name__ == "__main__":

@@ -5,19 +5,82 @@ Extracts common patterns from run_direct.py:
 - Text chunking (6000 chars, 300 overlap)
 - OpenAI API calls with retry (ThreadPoolExecutor)
 - JSONL output in nanochat CustomJSON format
+- Multi-format rendering (MC-4, MC-2, Open, CoT, Passage variants)
 """
 
 import os
 import json
 import time
+import random as _random
 from abc import ABC, abstractmethod
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.post_training.config import PERIODS, get_paths, load_api_key, MODEL, MAX_RETRIES, RETRY_BASE_DELAY
 from src.post_training.utils import validate_conversation, write_jsonl
 
+
+# ---------------------------------------------------------------------------
+# Format constants
+# ---------------------------------------------------------------------------
+
+# All supported format keys
+FORMAT_MC4 = "mc4"                # 4-choice MC (MMLU, ARC, HellaSwag, LAB Eval)
+FORMAT_MC2 = "mc2"                # 2-choice MC (PIQA, WinoGrande)
+FORMAT_MC4_PASSAGE = "mc4_passage"  # 4-choice MC with passage (RACE)
+FORMAT_MC2_PASSAGE = "mc2_passage"  # 2-choice MC with passage (BoolQ)
+FORMAT_OPEN = "open"              # Open-ended Q&A (GSM8K)
+FORMAT_COT = "cot"                # Chain-of-thought with <think> tags
+
+MAX_PASSAGE_LENGTH = 2000  # Truncate passages for passage-based formats
+
+
+# ---------------------------------------------------------------------------
+# Format rendering utilities (matching nanochat/tasks/common.py exactly)
+# ---------------------------------------------------------------------------
+
+def render_mc(question, letters, choices):
+    """Render MC question in nanochat format.
+
+    Matches nanochat/tasks/common.py:render_mc() exactly:
+    - choice text BEFORE letter (better token binding for small models)
+    - No whitespace before letter (token ID consistency)
+    """
+    query = f"Multiple Choice question: {question}\n"
+    query += "".join([f"- {choice}={letter}\n" for letter, choice in zip(letters, choices)])
+    query += "\nRespond only with the letter of the correct answer."
+    return query
+
+
+def make_mc_choices(correct, distractors, num_choices=4, seed=None):
+    """Shuffle correct answer among distractors.
+
+    Returns (letters, shuffled_choices, correct_letter).
+    """
+    rng = _random.Random(seed)
+    pool = [correct] + list(distractors[:num_choices - 1])
+    rng.shuffle(pool)
+    letters = tuple("ABCD"[:len(pool)])
+    correct_idx = pool.index(correct)
+    correct_letter = letters[correct_idx]
+    return letters, pool, correct_letter
+
+
+def truncate_passage(text, max_len=MAX_PASSAGE_LENGTH):
+    """Truncate passage for passage-based formats, breaking at sentence boundary."""
+    if len(text) <= max_len:
+        return text
+    truncated = text[:max_len]
+    last_period = truncated.rfind('. ')
+    if last_period > max_len // 2:
+        return truncated[:last_period + 1]
+    return truncated + "..."
+
+
+# ---------------------------------------------------------------------------
+# Shared utilities
+# ---------------------------------------------------------------------------
 
 def chunk_text(text, chunk_size=6000, overlap=300):
     """Split text into overlapping chunks."""
@@ -58,16 +121,22 @@ def call_api(client, prompt, model=MODEL, max_tokens=4096, temperature=0.7):
                 return None
 
 
+# ---------------------------------------------------------------------------
+# Base generator
+# ---------------------------------------------------------------------------
+
 class BaseGenerator(ABC):
     """Abstract base class for synthetic data generators."""
 
     name: str = ""
     items_per_chunk: int = 3
-    needs_corpus: bool = True  # False for D (temporal) and H (anti-halluc)
+    needs_corpus: bool = True   # False for D (temporal) and H (anti-halluc)
+    num_batches: int = 10       # for metadata-based generators (D, H)
+    SUPPORTED_FORMATS: tuple = (FORMAT_OPEN,)  # override in subclasses
 
     @abstractmethod
     def build_prompt(self, chunk, period, start_year, end_year):
-        """Build the generation prompt for a text chunk (or metadata)."""
+        """Build the generation prompt for a text chunk (or batch_num for metadata-based)."""
         ...
 
     @abstractmethod
@@ -76,25 +145,25 @@ class BaseGenerator(ABC):
         ...
 
     @abstractmethod
-    def format_conversation(self, item):
-        """Convert a raw item into nanochat conversation format.
-        Returns list of {role, content} dicts."""
+    def format_conversation(self, item, fmt, source_chunk=None):
+        """Convert a raw item into nanochat conversation format for a given format.
+
+        Args:
+            item: Raw item dict from parse_response()
+            fmt: Format string (e.g. FORMAT_MC4, FORMAT_OPEN, FORMAT_COT, etc.)
+            source_chunk: Original text chunk (for passage-based formats)
+
+        Returns:
+            List of {role, content} dicts, or None if format not applicable.
+        """
         ...
 
     def run(self, period, collections=None, max_workers=50, max_docs=None,
             chunk_size=6000, overlap=300):
-        """Run this generator for a period.
-
-        Args:
-            period: Period key (e.g. "1900_1949")
-            collections: Collection names to process. None = all available.
-            max_workers: Concurrent API calls
-            max_docs: Limit documents per collection (for testing)
-            chunk_size: Characters per chunk
-            overlap: Overlap between chunks
+        """Run this generator for a period, producing per-format output files.
 
         Returns:
-            Path to output JSONL file
+            Dict of {format: Path} for output files, or None on failure.
         """
         from openai import OpenAI
 
@@ -103,19 +172,25 @@ class BaseGenerator(ABC):
 
         generators_dir = paths["synthetic_dir"] / "by_generator"
         os.makedirs(generators_dir, exist_ok=True)
-        output_path = generators_dir / f"{self.name}.jsonl"
 
         api_key = load_api_key()
         client = OpenAI(api_key=api_key)
 
         print(f"Generator: {self.name}")
         print(f"Period: {period} ({start_year}-{end_year})")
+        print(f"Formats: {list(self.SUPPORTED_FORMATS)}")
         print(f"Max workers: {max_workers}")
         print(f"Model: {MODEL}")
 
+        # Build output paths per format
+        output_paths = {
+            fmt: generators_dir / f"{self.name}_{fmt}.jsonl"
+            for fmt in self.SUPPORTED_FORMATS
+        }
+
         if not self.needs_corpus:
             return self._run_metadata_based(
-                client, period, start_year, end_year, max_workers, output_path
+                client, period, start_year, end_year, max_workers, output_paths
             )
 
         docs = self._load_documents(paths, collections, max_docs)
@@ -132,10 +207,11 @@ class BaseGenerator(ABC):
 
         total_tasks = len(tasks)
         print(f"Tasks: {total_tasks:,} ({len(docs)} docs)")
-        print(f"Output: {output_path}")
+        for fmt, path in output_paths.items():
+            print(f"  {fmt} -> {path.name}")
 
         # Process with ThreadPoolExecutor
-        conversations = []
+        all_results = {fmt: [] for fmt in self.SUPPORTED_FORMATS}
         completed = 0
         failed = 0
         start_time = time.time()
@@ -148,8 +224,9 @@ class BaseGenerator(ABC):
 
             for future in as_completed(futures):
                 try:
-                    convs = future.result()
-                    conversations.extend(convs)
+                    results = future.result()
+                    for fmt, convs in results.items():
+                        all_results[fmt].extend(convs)
                     completed += 1
                 except Exception as e:
                     failed += 1
@@ -159,44 +236,90 @@ class BaseGenerator(ABC):
                 if done % 25 == 0 or done == total_tasks:
                     elapsed = time.time() - start_time
                     rate = done / elapsed if elapsed > 0 else 0
-                    remaining = (total_tasks - done) / rate if rate > 0 else 0
                     print(f"  [{datetime.now().strftime('%H:%M:%S')}] "
                           f"{done:,}/{total_tasks:,} ({100*done/total_tasks:.1f}%) "
                           f"Rate: {rate:.1f}/s | OK: {completed} Failed: {failed}",
                           flush=True)
 
+        # Write per-format output files
         elapsed = time.time() - start_time
-        write_jsonl(conversations, str(output_path))
+        total_convs = 0
+        for fmt in self.SUPPORTED_FORMATS:
+            write_jsonl(all_results[fmt], str(output_paths[fmt]))
+            count = len(all_results[fmt])
+            total_convs += count
+            print(f"  {fmt}: {count:,} conversations -> {output_paths[fmt].name}")
+
         print(f"Complete in {elapsed:.1f}s. "
-              f"{len(conversations):,} conversations. Failed: {failed}")
-        return output_path
+              f"{total_convs:,} total conversations. Failed: {failed}")
+        return output_paths
 
     def _process_task(self, task):
-        """Process a single chunk. Runs in thread pool."""
+        """Process a single chunk. Returns {fmt: [conversations]}."""
         client, doc_name, chunk_idx, chunk, period, start_year, end_year = task
 
         prompt = self.build_prompt(chunk, period, start_year, end_year)
         response = call_api(client, prompt)
 
         if response is None:
-            return []
+            return {}
 
         items = self.parse_response(response)
-        conversations = []
+        results = {}
         for item in items:
-            conv = self.format_conversation(item)
-            valid, err = validate_conversation(conv)
-            if valid:
-                conversations.append(conv)
-        return conversations
+            for fmt in self.SUPPORTED_FORMATS:
+                conv = self.format_conversation(item, fmt, source_chunk=chunk)
+                if conv is None:
+                    continue
+                valid, err = validate_conversation(conv)
+                if valid:
+                    results.setdefault(fmt, []).append(conv)
+        return results
 
     def _run_metadata_based(self, client, period, start_year, end_year,
-                            max_workers, output_path):
-        """Override for generators that don't need corpus (D, H)."""
-        raise NotImplementedError(
-            f"{self.name} has needs_corpus=False but doesn't implement "
-            f"_run_metadata_based()"
-        )
+                            max_workers, output_paths):
+        """Default implementation for metadata-based generators (D, H)."""
+        print(f"Generating {self.num_batches} batches x {self.items_per_chunk} items")
+        for fmt, path in output_paths.items():
+            print(f"  {fmt} -> {path.name}")
+
+        all_results = {fmt: [] for fmt in self.SUPPORTED_FORMATS}
+        completed = 0
+        failed = 0
+
+        with ThreadPoolExecutor(max_workers=min(max_workers, self.num_batches)) as executor:
+            futures = {}
+            for batch_num in range(1, self.num_batches + 1):
+                prompt = self.build_prompt(batch_num, period, start_year, end_year)
+                futures[executor.submit(call_api, client, prompt)] = batch_num
+
+            for future in as_completed(futures):
+                try:
+                    response = future.result()
+                    if response:
+                        items = self.parse_response(response)
+                        for item in items:
+                            for fmt in self.SUPPORTED_FORMATS:
+                                conv = self.format_conversation(item, fmt)
+                                if conv is None:
+                                    continue
+                                valid, _ = validate_conversation(conv)
+                                if valid:
+                                    all_results[fmt].append(conv)
+                    completed += 1
+                except Exception as e:
+                    failed += 1
+                    print(f"  [ERROR] {type(e).__name__}: {e}", flush=True)
+
+        total_convs = 0
+        for fmt in self.SUPPORTED_FORMATS:
+            write_jsonl(all_results[fmt], str(output_paths[fmt]))
+            count = len(all_results[fmt])
+            total_convs += count
+            print(f"  {fmt}: {count:,} conversations")
+
+        print(f"Complete. {total_convs:,} total conversations. Failed: {failed}")
+        return output_paths
 
     def _load_documents(self, paths, collections, max_docs):
         """Load documents from synthetic/input/ directory."""

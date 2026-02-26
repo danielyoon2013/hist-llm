@@ -1,6 +1,8 @@
-"""Generator A: Factual QA — open-ended question-answer pairs from corpus text."""
+"""Generator A: Factual QA — multi-format (MC-4, Open-ended)."""
 
-from src.post_training.generators.base import BaseGenerator
+from src.post_training.generators.base import (
+    BaseGenerator, FORMAT_MC4, FORMAT_OPEN, render_mc, make_mc_choices,
+)
 from src.post_training.generators.prompts import QA_PROMPT
 
 
@@ -8,6 +10,7 @@ class GenAFactual(BaseGenerator):
 
     name = "gen_a_factual"
     items_per_chunk = 3
+    SUPPORTED_FORMATS = (FORMAT_MC4, FORMAT_OPEN)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return QA_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
@@ -15,8 +18,27 @@ class GenAFactual(BaseGenerator):
     def parse_response(self, response):
         return response.get("qa_pairs", [])
 
-    def format_conversation(self, item):
-        return [
-            {"role": "user", "content": item["question"]},
-            {"role": "assistant", "content": item["answer"]},
-        ]
+    def format_conversation(self, item, fmt, source_chunk=None):
+        question = item.get("question", "")
+        answer = item.get("answer", "")
+
+        if fmt == FORMAT_OPEN:
+            return [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": answer},
+            ]
+
+        if fmt == FORMAT_MC4:
+            distractors = item.get("distractors", [])
+            if len(distractors) < 3:
+                return None
+            letters, choices, correct = make_mc_choices(
+                answer, distractors, num_choices=4, seed=hash(question)
+            )
+            user_msg = render_mc(question, letters, choices)
+            return [
+                {"role": "user", "content": user_msg},
+                {"role": "assistant", "content": correct},
+            ]
+
+        return None

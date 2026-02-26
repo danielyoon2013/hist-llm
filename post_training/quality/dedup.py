@@ -140,11 +140,24 @@ def dedup_cross_generator(generator_files, priority_order=None):
     Returns dict mapping generator_name -> deduped conversations, plus stats.
     """
     if priority_order is None:
-        priority_order = [
-            "gen_a_factual", "gen_b_cot", "gen_c_comprehension",
-            "gen_d_temporal", "gen_e_quantitative", "gen_f_completion",
-            "gen_g_instruct", "gen_h_antihalluc",
+        # Priority prefixes: generators earlier in alphabet keep duplicates.
+        # Handles both old names (gen_a_factual) and new per-format names
+        # (gen_a_factual_mc4, gen_a_factual_open).
+        priority_prefixes = [
+            "gen_a_", "gen_b_", "gen_c_", "gen_d_",
+            "gen_e_", "gen_f_", "gen_g_", "gen_h_",
         ]
+        # Sort generator names by priority prefix, then alphabetically
+        all_names = sorted(generator_files.keys())
+        priority_order = []
+        for prefix in priority_prefixes:
+            for name in all_names:
+                if name.startswith(prefix) and name not in priority_order:
+                    priority_order.append(name)
+        # Append any remaining names not matching prefixes
+        for name in all_names:
+            if name not in priority_order:
+                priority_order.append(name)
 
     global_seen = set()
     result = {}
