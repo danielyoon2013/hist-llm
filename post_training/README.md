@@ -6,7 +6,7 @@ Synthetic data generation, quality filtering, and assembly for historical LLM po
 
 | Step | What | How | Output |
 |------|------|-----|--------|
-| 1 | Generate synthetic data | `python -m src.post_training.generate --period {P} --generators A B C D E F G H` | `synthetic/by_generator/gen_*.jsonl` |
+| 1 | Generate synthetic data | `python -m src.post_training.generate --period {P} --generators A B C D E F G H` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
 | 2 | Validate + deduplicate | `python -m src.post_training.process --period {P}` | `quality/validated/`, `quality/deduped/` |
 | 3 | LAB temporal filter | `python -m src.post_training.instruct.filter --period {P} --submit --input-dir {deduped_dir}` | `final/filtered/` |
 | 3b | Check filter status | `python -m src.post_training.instruct.filter --period {P} --check --input-dir {deduped_dir}` | — |
@@ -29,37 +29,50 @@ Generators A-H  -->  Validate + Dedup  -->  LAB Filter    -->   Merge + Split
   |                    |                    (Batch API)           |
   v                    v                      |                   v
 by_generator/        quality/                 v                 final/train/
-gen_*.jsonl          validated/             final/              final/test/
-                     deduped/               filtered/
+gen_*_{fmt}.jsonl    validated/             final/              final/test/
+(19 format files)    deduped/               filtered/
                      stats.json
 ```
 
 ---
 
-## The 8 Generators
+## The 8 Generators (19 Format Cells)
 
-| ID | Name | Input | Format | Items/Chunk |
-|----|------|-------|--------|-------------|
-| A | Factual QA | corpus chunks | Open-ended Q&A | 3 |
-| B | Chain-of-Thought | corpus chunks | `<think>` reasoning + answer | 2 |
-| C | Reading Comprehension | corpus passages | MC (A/B/C/D) | 3 |
-| D | Temporal Reasoning | period metadata | MC (A/B/C/D) | 5 |
-| E | Quantitative | corpus chunks | `<think>` math reasoning | 2 |
-| F | Sentence Completion | corpus sentences | MC HellaSwag-style | 3 |
-| G | Instruction Following | corpus passages | Instruction + response | 2 |
-| H | Anti-Hallucination | period metadata | Refusal for post-period Q | 5 |
+Each generator produces multiple format variants from a single API call, aligned to external benchmark native formats. This ensures evaluation measures temporal knowledge, not format confusion.
+
+| ID | Name | Input | Supported Formats | Benchmark Alignment | Items/Chunk |
+|----|------|-------|-------------------|---------------------|-------------|
+| A | Factual QA | corpus chunks | `mc4`, `open` | MMLU, ARC | 3 |
+| B | Chain-of-Thought | corpus chunks | `mc4`, `open`, `cot` | ARC, GSM8K | 2 |
+| C | Reading Comprehension | corpus passages | `mc4`, `mc4_passage`, `mc2_passage` | HellaSwag, RACE, BoolQ | 3 |
+| D | Temporal Reasoning | period metadata | `mc4`, `open` | LAB Eval | 5 |
+| E | Quantitative | corpus chunks | `open`, `cot` | GSM8K | 2 |
+| F | Sentence Completion | corpus sentences | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 |
+| G | Instruction Following | corpus passages | `open`, `mc4_passage` | RACE | 2 |
+| H | Anti-Hallucination | period metadata | `mc4`, `open` | LAB Eval | 5 |
+
+### Format Key
+
+| Format | Description | Eval Benchmarks Using It |
+|--------|-------------|--------------------------|
+| `mc4` | 4-choice MC via `render_mc()` | MMLU, ARC, HellaSwag, LAB Eval |
+| `mc2` | 2-choice MC via `render_mc()` | PIQA, WinoGrande |
+| `mc4_passage` | Passage prefix + 4-choice MC (RACE-style) | RACE |
+| `mc2_passage` | Passage prefix + 2-choice MC (BoolQ-style) | BoolQ |
+| `open` | Open-ended question + answer | GSM8K (generative) |
+| `cot` | Question + `<think>` reasoning + answer | GSM8K (with reasoning) |
 
 **Corpus-based** (A, B, C, E, F, G): Read text from `synthetic/input/` (parquet or txt), chunk at 6000 chars / 300 overlap, call GPT-4o-mini per chunk.
 
 **Metadata-based** (D, H): Generate from period year range alone (no corpus needed). D creates temporal ordering questions; H creates refusal examples for events after the period's end year.
 
-**MC format** (C, D, F): Uses nanochat's `render_mc()` format:
+**MC format** matches nanochat's `render_mc()` exactly (choice text BEFORE letter for better token binding in small models):
 ```
-Question text?
-- choice=A: ...
-- choice=B: ...
-- choice=C: ...
-- choice=D: ...
+Multiple Choice question: What caused...?
+- The economy grew=A
+- War broke out=B
+- Population declined=C
+- Trade expanded=D
 
 Respond only with the letter of the correct answer.
 ```
@@ -70,10 +83,10 @@ Respond only with the letter of the correct answer.
 
 ### Step 1: Generate Synthetic Data
 
-Run one or more generators for a period. Each generator writes a separate JSONL file to `synthetic/by_generator/`.
+Run one or more generators for a period. Each generator writes one JSONL file **per supported format** to `synthetic/by_generator/`.
 
 ```bash
-# Full run (all 8 generators)
+# Full run (all 8 generators, produces 19 format files)
 python -m src.post_training.generate --period 1900_1949 --generators A B C D E F G H
 
 # Test run (3 documents only, < $0.01)
@@ -89,7 +102,7 @@ python -m src.post_training.generate --period 1900_1949 --generators D H
 python -m src.post_training.generate --period 1900_1949 --generators A --max-workers 80
 ```
 
-**Output:** `D:\hist_LLM\periods\{period}\posttraining_data\synthetic\by_generator\gen_*.jsonl`
+**Output:** `D:\hist_LLM\periods\{period}\posttraining_data\synthetic\by_generator\gen_{name}_{fmt}.jsonl`
 
 All output is nanochat CustomJSON format: each line is `[{"role":"user","content":"..."},{"role":"assistant","content":"..."}]`
 
@@ -101,7 +114,7 @@ Two-step local pipeline (no API calls):
 2. **Dedup** — 3-level deduplication:
    - Level 1: Exact hash (SHA-256 of normalized user message)
    - Level 2: Near-duplicate (MinHash + LSH, threshold 0.8, requires `pip install datasketch`)
-   - Level 3: Cross-generator (remove duplicate questions across generators, priority A > B > C > ...)
+   - Level 3: Cross-generator (remove duplicate questions across generators, priority A > B > C > ..., per-format files handled by prefix matching)
 
 ```bash
 # Full pipeline (validate + dedup)
@@ -113,8 +126,8 @@ python -m src.post_training.process --period 1900_1949 --step dedup
 ```
 
 **Output:**
-- `D:\hist_LLM\periods\{period}\posttraining_data\quality\validated\gen_*.jsonl`
-- `D:\hist_LLM\periods\{period}\posttraining_data\quality\deduped\gen_*.jsonl`
+- `D:\hist_LLM\periods\{period}\posttraining_data\quality\validated\gen_*_{fmt}.jsonl`
+- `D:\hist_LLM\periods\{period}\posttraining_data\quality\deduped\gen_*_{fmt}.jsonl`
 - `D:\hist_LLM\periods\{period}\posttraining_data\quality\stats.json`
 
 ### Step 3: LAB Temporal Filter
@@ -186,10 +199,12 @@ All generators use `gpt-4o-mini` ($0.15/1M input, $0.60/1M output).
 
 | Item | Cost per Period |
 |------|----------------|
-| Generation (8 generators) | ~$4.00-5.50 |
+| Generation (8 generators, 19 formats) | ~$4.00-5.50 |
 | LAB filtering (Batch API) | ~$2-3 |
 | **Total per period** | **~$6-8.50** |
 | **All 6 periods** | **~$36-51** |
+
+Multi-format rendering adds zero extra API cost (same API call produces all format variants).
 
 For testing, use `--max-docs 3` to limit to ~6 chunks and ~48 API calls (< $0.01).
 
@@ -220,16 +235,17 @@ post_training/
 │
 ├── generators/                        # Synthetic data generators (A-H)
 │   ├── __init__.py                    # Registry: {"A": GenAFactual, ...}
-│   ├── base.py                        # BaseGenerator: chunking, API, ThreadPool
-│   ├── prompts.py                     # All 8 prompt templates
-│   ├── gen_a_factual.py               # A: Factual QA
-│   ├── gen_b_cot.py                   # B: Chain-of-Thought
-│   ├── gen_c_comprehension.py         # C: Reading Comprehension (MC)
-│   ├── gen_d_temporal.py              # D: Temporal Reasoning (MC, no corpus)
-│   ├── gen_e_quantitative.py          # E: Quantitative / Math
-│   ├── gen_f_completion.py            # F: Sentence Completion (MC)
-│   ├── gen_g_instruct.py              # G: Instruction Following
-│   └── gen_h_antihalluc.py            # H: Anti-Hallucination (no corpus)
+│   ├── base.py                        # BaseGenerator, render_mc, make_mc_choices,
+│   │                                  #   truncate_passage, chunk_text, call_api
+│   ├── prompts.py                     # All 8 prompt templates (with distractor requests)
+│   ├── gen_a_factual.py               # A: Factual QA (mc4, open)
+│   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, open, cot)
+│   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4, mc4_passage, mc2_passage)
+│   ├── gen_d_temporal.py              # D: Temporal Reasoning (mc4, open; no corpus)
+│   ├── gen_e_quantitative.py          # E: Quantitative / Math (open, cot)
+│   ├── gen_f_completion.py            # F: Sentence Completion (mc4, mc2)
+│   ├── gen_g_instruct.py              # G: Instruction Following (open, mc4_passage)
+│   └── gen_h_antihalluc.py            # H: Anti-Hallucination (mc4, open; no corpus)
 │
 ├── quality/                           # Quality pipeline
 │   ├── __init__.py
@@ -266,22 +282,32 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   ├── generated/                     # Legacy run_direct.py output
 │   │   └── {collection}/
 │   │       └── {collection}_qa_cot.jsonl
-│   ├── by_generator/                  # Per-generator raw output (Step 1)
-│   │   ├── gen_a_factual.jsonl
-│   │   ├── gen_b_cot.jsonl
-│   │   ├── gen_c_comprehension.jsonl
-│   │   ├── gen_d_temporal.jsonl
-│   │   ├── gen_e_quantitative.jsonl
-│   │   ├── gen_f_completion.jsonl
-│   │   ├── gen_g_instruct.jsonl
-│   │   └── gen_h_antihalluc.jsonl
+│   ├── by_generator/                  # Per-generator, per-format raw output (Step 1)
+│   │   ├── gen_a_factual_mc4.jsonl
+│   │   ├── gen_a_factual_open.jsonl
+│   │   ├── gen_b_cot_mc4.jsonl
+│   │   ├── gen_b_cot_open.jsonl
+│   │   ├── gen_b_cot_cot.jsonl
+│   │   ├── gen_c_comprehension_mc4.jsonl
+│   │   ├── gen_c_comprehension_mc4_passage.jsonl
+│   │   ├── gen_c_comprehension_mc2_passage.jsonl
+│   │   ├── gen_d_temporal_mc4.jsonl
+│   │   ├── gen_d_temporal_open.jsonl
+│   │   ├── gen_e_quantitative_open.jsonl
+│   │   ├── gen_e_quantitative_cot.jsonl
+│   │   ├── gen_f_completion_mc4.jsonl
+│   │   ├── gen_f_completion_mc2.jsonl
+│   │   ├── gen_g_instruct_open.jsonl
+│   │   ├── gen_g_instruct_mc4_passage.jsonl
+│   │   ├── gen_h_antihalluc_mc4.jsonl
+│   │   └── gen_h_antihalluc_open.jsonl
 │   └── document_metadata.parquet      # Document provenance index
 │
 ├── quality/                           # Quality pipeline outputs (Step 2)
 │   ├── validated/                     # After format + content validation
-│   │   └── gen_*.jsonl
+│   │   └── gen_*_{fmt}.jsonl
 │   ├── deduped/                       # After 3-level deduplication
-│   │   └── gen_*.jsonl
+│   │   └── gen_*_{fmt}.jsonl
 │   └── stats.json                     # Pipeline statistics
 │
 ├── final/
@@ -318,6 +344,7 @@ All output files are in nanochat's **CustomJSON** format (loaded by `nanochat/ta
 
 ```jsonl
 [{"role":"user","content":"What caused...?"},{"role":"assistant","content":"The main cause..."}]
+[{"role":"user","content":"Multiple Choice question: ...\n- Option A=A\n- Option B=B\n..."},{"role":"assistant","content":"B"}]
 [{"role":"user","content":"Explain..."},{"role":"assistant","content":"<think>\nStep 1...\n</think>\nThe answer is..."}]
 ```
 
