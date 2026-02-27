@@ -34,7 +34,7 @@
 Our synthetic data generation operates on a **3D matrix**:
 
 1. **Content type (rows)** — What capability does the example train? (8 generators A-H)
-2. **Format (columns)** — How is the question/answer structured? (MC, open-ended, CoT, T/F, fill-blank, passage-based, ranking)
+2. **Format (columns)** — How is the question/answer structured? Our 6 formats: MC-4, MC-2, MC-4+Passage, MC-2+Passage, Open-ended, Chain-of-Thought
 3. **Source (depth)** — Which corpus collection provides the input text? (News, Law, Academic, etc.)
 
 This framework is motivated by three findings from the literature:
@@ -52,23 +52,32 @@ No prior work has formally organized synthetic data generation as a content x fo
 
 Before designing our generators, we first map **what formats existing benchmarks use**. This is the demand side — the evaluation landscape our synthetic data must cover.
 
-| Benchmark | Type | MC | Open-ended | CoT | T/F | Fill-blank | Passage-based |
-|-----------|------|:--:|:----------:|:---:|:---:|:----------:|:-------------:|
+| Benchmark | Type | MC-4 | MC-2 | MC-4+P | MC-2+P | Open | CoT |
+|-----------|------|:----:|:----:|:------:|:------:|:----:|:---:|
 | MMLU | External | O | | | | | |
 | ARC-Challenge | External | O | | | | | |
-| GSM8K | External | | O | O | | | |
+| GSM8K | External | | | | | O | O |
 | HellaSwag | External | O | | | | | |
-| BoolQ | External | | | | O | | O |
-| PIQA | External | O | | | | | |
-| WinoGrande | External | | | | | O | |
-| RACE | External | O | | | | | O |
+| BoolQ | External | | | | O | | |
+| PIQA | External | | O | | | | |
+| WinoGrande | External | | O | | | | |
+| RACE | External | | | O | | | |
 | LAB Eval | Ours | O | | | | | |
-| Temp Consistency | Ours | | O | | | | |
-| Anti-H Diagnostic | Ours | | O | | O | | |
+| Temp Consistency | Ours | | | | | O | |
+| Anti-H Diagnostic | Ours | | | | | O | |
 
-**Reading this table:** Each row is an evaluation benchmark. Each column is a data format. "O" marks the format(s) that benchmark uses. External benchmarks are standard academic benchmarks; "Ours" are diagnostic metrics we designed to measure temporal isolation (see `05_EVALUATION_FRAMEWORK.md` Section 4).
+**Format key:** MC-4 = 4-choice multiple choice. MC-2 = 2-choice multiple choice. MC-4+P / MC-2+P = MC with passage prefix. Open = open-ended generative. CoT = chain-of-thought with reasoning steps. All MC formats are rendered through nanochat's `render_mc()` function using `- {choice_text}={letter}` syntax.
 
-**Key observation:** The demand is concentrated in MC and open-ended formats, but breadth benchmarks (BoolQ, WinoGrande, RACE) also require T/F, fill-blank, and passage-based formats. Any generator suite that only produces MC questions would leave gaps.
+**Reading this table:** Each row is an evaluation benchmark. Each column is a data format as rendered in nanochat evaluation. "O" marks the format that benchmark uses. External benchmarks are standard academic benchmarks; "Ours" are diagnostic metrics we designed to measure temporal isolation (see `05_EVALUATION_FRAMEWORK.md` Section 4).
+
+**Important notes on format mapping:**
+- **BoolQ** is natively boolean (true/false) but nanochat renders it as MC-2 (A=No, B=Yes) with passage via `render_mc()`.
+- **WinoGrande** is natively fill-in-the-blank but nanochat renders it as MC-2 (two options) via `render_mc()`.
+- **PIQA** is natively 2-choice (sol1/sol2), rendered as MC-2 via `render_mc()`.
+- **HellaSwag** presents context + 4 continuation endings, rendered as MC-4 via `render_mc()`.
+- **GSM8K** is the only benchmark evaluated generatively (not through `render_mc()`).
+
+**Key observation:** The demand spans all 6 format types. MC-4 dominates (4 benchmarks), but MC-2 (BoolQ, PIQA, WinoGrande), passage-based (BoolQ, RACE), and generative (GSM8K) formats require dedicated coverage. Any generator suite that only produces MC-4 questions would leave gaps in 5 of 8 external benchmarks.
 
 Now, the content tested by these external benchmarks can be naturally classified into generator categories:
 
@@ -89,20 +98,22 @@ Generators A-C and E-G each serve at least one external benchmark. **D and H hav
 
 Now the supply side. Each of our 8 generators produces data in one or more formats, collectively covering every format demanded by the benchmarks above.
 
-| Generator | MC | Open-ended | CoT | T/F | Fill-blank | Passage-based | Ranking | Benchmark Targets |
-|-----------|:--:|:----------:|:---:|:---:|:----------:|:-------------:|:-------:|-------------------|
-| **A.** Factual QA | O | O | | O | | | | MMLU, ARC, BoolQ |
-| **B.** Chain-of-Thought | | O | O | | | | O | ARC, GSM8K |
-| **C.** Reading Comprehension | O | O | O | | | O | | HellaSwag, RACE, BoolQ |
-| **D.** Temporal Reasoning | O | | O | O | | | O | LAB Eval, Temp Consistency |
-| **E.** Quantitative | | O | O | | O | | | GSM8K (complement) |
-| **F.** Sentence Completion | | | | | O | | | HellaSwag, WinoGrande |
-| **G.** Instruction Following | | O | | | | O | | RACE, general |
-| **H.** Anti-Hallucination | O | O | | O | | | | LAB Eval, Anti-H Diagnostic |
-| *GSM8K (retained)* | | O | O | | | | | GSM8K |
-| *MATH (retained)* | | O | O | | | | | GSM8K |
+| Generator | MC-4 | MC-2 | MC-4+P | MC-2+P | Open | CoT | Benchmark Targets |
+|-----------|:----:|:----:|:------:|:------:|:----:|:---:|-------------------|
+| **A.** Factual QA | O | | | | O | | MMLU, ARC |
+| **B.** Chain-of-Thought | O | | | | O | O | ARC, GSM8K |
+| **C.** Reading Comprehension | O | | O | O | | | HellaSwag, RACE, BoolQ |
+| **D.** Temporal Reasoning | O | | | | O | | LAB Eval, Temp Consistency |
+| **E.** Quantitative | | | | | O | O | GSM8K (complement) |
+| **F.** Sentence Completion | O | O | | | | | HellaSwag, PIQA, WinoGrande |
+| **G.** Instruction Following | | | O | | O | | RACE, general |
+| **H.** Anti-Hallucination | O | | | | O | | LAB Eval, Anti-H Diagnostic |
+| *GSM8K (retained)* | | | | | O | O | GSM8K |
+| *MATH (retained)* | | | | | O | O | GSM8K |
 
-This yields **~25 active (generator, format) cells**, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
+This yields **18 active (generator, format) cells** plus 4 from external datasets, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
+
+**Format alignment principle:** Each generator's format variants are derived from the native evaluation formats of its target benchmarks. For example, Generator F targets HellaSwag (MC-4), PIQA (MC-2), and WinoGrande (MC-2), so it produces both MC-4 and MC-2 format variants. This ensures training data format matches evaluation format, isolating temporal knowledge as the measured variable.
 
 ### 1d. The Source Dimension: Generator x Collection
 
@@ -174,22 +185,22 @@ Every generator was designed to target specific evaluation benchmarks. Conversel
 
 Which training data formats cover each evaluation benchmark. **O** = format directly matches the benchmark's native eval format. `o` = additional format coverage from our generators.
 
-| Benchmark | Type | MC | Open | CoT | T/F | Fill | Passage | Rank |
-|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| MMLU | External | **O** | o | | o | | | |
-| ARC-Challenge | External | **O** | o | o | o | | | o |
-| GSM8K | External | | **O** | **O** | | o | | |
-| HellaSwag | External | **O** | | | | | | |
-| BoolQ | External | o | o | o | **O** | | **O** | |
-| PIQA | External | **O** | | | | | | |
-| WinoGrande | External | | | | | **O** | | |
-| RACE | External | **O** | o | o | | | **O** | o |
-| LAB Eval | Ours | **O** | o | o | o | | | o |
-| LAP Score | Ours | o | o | o | o | | | o |
-| Temp Consistency | Ours | o | | o | o | | | o |
-| Anti-H Diag | Ours | o | **O** | | o | | | |
+| Benchmark | Type | MC-4 | MC-2 | MC-4+P | MC-2+P | Open | CoT |
+|---|---|:----:|:----:|:------:|:------:|:----:|:---:|
+| MMLU | External | **O** | | | | o | |
+| ARC-Challenge | External | **O** | | | | o | o |
+| GSM8K | External | | | | | **O** | **O** |
+| HellaSwag | External | **O** | | | | | |
+| BoolQ | External | | | | **O** | | |
+| PIQA | External | | **O** | | | | |
+| WinoGrande | External | | **O** | | | | |
+| RACE | External | | | **O** | | o | |
+| LAB Eval | Ours | **O** | | | | o | |
+| LAP Score | Ours | o | | | | o | |
+| Temp Consistency | Ours | o | | | | **O** | |
+| Anti-H Diag | Ours | o | | | | **O** | |
 
-**O** = native eval format match | `o` = supplementary format coverage
+**O** = native eval format match | `o` = supplementary format coverage from our generators
 
 **Note on our diagnostic benchmarks (bottom 4 rows):**
 - **LAB Eval** (Look-Ahead Bias) — 5,000 MC questions per period about post-period events. A perfectly isolated model scores 25% (random chance on 4-choice MC).
