@@ -25,29 +25,30 @@ class GenFCompletion(BaseGenerator):
         choices_dict = item.get("choices", {})
         correct_letter = item.get("correct", "A")
         correct_text = choices_dict.get(correct_letter, "")
+        distractors = [choices_dict[l] for l in ("A", "B", "C", "D")
+                       if l != correct_letter and choices_dict.get(l)]
 
         if fmt == FORMAT_MC4:
-            # HellaSwag-style: context + 4 completions
-            letters = ("A", "B", "C", "D")
-            choices = [choices_dict.get(l, "") for l in letters]
+            if len(distractors) < 3 or not correct_text:
+                return None
+            letters, choices, correct = make_mc_choices(
+                correct_text, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
+            )
             user_msg = render_mc(context, letters, choices)
             return [
                 {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct_letter},
+                {"role": "assistant", "content": correct},
             ]
 
         if fmt == FORMAT_MC2:
-            # WinoGrande-style: context + 2 completions
-            wrong_choices = [
-                choices_dict[l] for l in ("A", "B", "C", "D")
-                if l != correct_letter and choices_dict.get(l)
-            ]
-            if not wrong_choices:
+            if not distractors or not correct_text:
                 return None
             rng = _random.Random(hash(context))
-            wrong_choice = rng.choice(wrong_choices)
+            wrong_choice = rng.choice(distractors)
             letters_2, choices_2, correct_2 = make_mc_choices(
-                correct_text, [wrong_choice], num_choices=2, seed=hash(context)
+                correct_text, [wrong_choice], num_choices=2,
+                position_idx=next(self._mc_counters[fmt]),
             )
             user_msg = render_mc(context, letters_2, choices_2)
             return [

@@ -1,7 +1,7 @@
 """Generator D: Temporal Reasoning — multi-format (MC-4, Open-ended). Metadata-based, no corpus."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, FORMAT_OPEN, render_mc,
+    BaseGenerator, FORMAT_MC4, FORMAT_OPEN, render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import TEMPORAL_PROMPT
 
@@ -31,18 +31,25 @@ class GenDTemporal(BaseGenerator):
         choices_dict = item.get("choices", {})
         correct_letter = item.get("correct", "A")
 
+        letters_4 = ("A", "B", "C", "D")
+        correct_text = choices_dict.get(correct_letter, "")
+        distractors = [choices_dict[l] for l in letters_4
+                       if l != correct_letter and choices_dict.get(l)]
+
         if fmt == FORMAT_MC4:
-            letters = ("A", "B", "C", "D")
-            choices = [choices_dict.get(l, "") for l in letters]
+            if len(distractors) < 3 or not correct_text:
+                return None
+            letters, choices, correct = make_mc_choices(
+                correct_text, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
+            )
             user_msg = render_mc(question, letters, choices)
             return [
                 {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct_letter},
+                {"role": "assistant", "content": correct},
             ]
 
         if fmt == FORMAT_OPEN:
-            # Extract the correct answer text
-            correct_text = choices_dict.get(correct_letter, "")
             if not correct_text:
                 return None
             return [

@@ -41,7 +41,8 @@ class GenHAntiHalluc(BaseGenerator):
             if len(distractors) < 3:
                 return None
             letters, choices, correct = make_mc_choices(
-                response_text, distractors, num_choices=4, seed=hash(question)
+                response_text, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
             )
             user_msg = render_mc(question, letters, choices)
             return [

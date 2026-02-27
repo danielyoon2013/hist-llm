@@ -26,49 +26,52 @@ class GenCComprehension(BaseGenerator):
         choices_dict = item.get("choices", {})
         correct_letter = item.get("correct", "A")
 
-        # Extract ordered choices
+        # Extract correct text and distractors from GPT's choices dict
         letters_4 = ("A", "B", "C", "D")
-        choices_4 = [choices_dict.get(l, "") for l in letters_4]
         correct_text = choices_dict.get(correct_letter, "")
+        distractors = [choices_dict[l] for l in letters_4
+                       if l != correct_letter and choices_dict.get(l)]
 
         if fmt == FORMAT_MC4:
-            # Standard MC-4, no passage prefix (HellaSwag/MMLU style)
-            user_msg = render_mc(question, letters_4, choices_4)
+            if len(distractors) < 3:
+                return None
+            letters, choices, correct = make_mc_choices(
+                correct_text, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
+            )
+            user_msg = render_mc(question, letters, choices)
             return [
                 {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct_letter},
+                {"role": "assistant", "content": correct},
             ]
 
         if fmt == FORMAT_MC4_PASSAGE:
-            # RACE-style: passage + MC-4
-            if not source_chunk:
+            if not source_chunk or len(distractors) < 3:
                 return None
+            letters, choices, correct = make_mc_choices(
+                correct_text, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
+            )
             passage = truncate_passage(source_chunk)
             passage_question = (
                 f"Read the following passage and answer the question.\n\n"
                 f"Passage: {passage}\n\n{question}"
             )
-            user_msg = render_mc(passage_question, letters_4, choices_4)
+            user_msg = render_mc(passage_question, letters, choices)
             return [
                 {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct_letter},
+                {"role": "assistant", "content": correct},
             ]
 
         if fmt == FORMAT_MC2_PASSAGE:
-            # BoolQ-style: passage + MC-2
-            if not source_chunk:
+            if not source_chunk or not distractors:
                 return None
-            # Pick one distractor
-            wrong_choices = [
-                choices_dict[l] for l in letters_4
-                if l != correct_letter and choices_dict.get(l)
-            ]
-            if not wrong_choices:
-                return None
+            # Pick one distractor deterministically
             rng = _random.Random(hash(question))
-            wrong_choice = rng.choice(wrong_choices)
+            wrong_choice = rng.choice(distractors)
             letters_2, choices_2, correct_2 = make_mc_choices(
-                correct_text, [wrong_choice], num_choices=2, seed=hash(question)
+                correct_text, [wrong_choice], num_choices=2,
+                position_idx=next(self._mc_counters[fmt]),
             )
             passage = truncate_passage(source_chunk)
             passage_question = (

@@ -12,6 +12,8 @@ import os
 import json
 import time
 import random as _random
+import itertools
+from collections import defaultdict
 from abc import ABC, abstractmethod
 from pathlib import Path
 from datetime import datetime
@@ -53,17 +55,24 @@ def render_mc(question, letters, choices):
     return query
 
 
-def make_mc_choices(correct, distractors, num_choices=4, seed=None):
-    """Shuffle correct answer among distractors.
+def make_mc_choices(correct, distractors, num_choices=4, position_idx=None):
+    """Place correct answer among distractors with balanced positioning.
 
-    Returns (letters, shuffled_choices, correct_letter).
+    Args:
+        correct: The correct answer text.
+        distractors: List of incorrect answer texts.
+        num_choices: Total number of choices (4 for MC-4, 2 for MC-2).
+        position_idx: Cyclic index for balanced placement. When provided,
+            correct answer goes to position (position_idx % num_choices).
+            This guarantees uniform distribution across A/B/C/D over a dataset.
+
+    Returns (letters, ordered_choices, correct_letter).
     """
-    rng = _random.Random(seed)
-    pool = [correct] + list(distractors[:num_choices - 1])
-    rng.shuffle(pool)
+    wrong = list(distractors[:num_choices - 1])
+    target_pos = position_idx % num_choices if position_idx is not None else 0
+    pool = wrong[:target_pos] + [correct] + wrong[target_pos:]
     letters = tuple("ABCD"[:len(pool)])
-    correct_idx = pool.index(correct)
-    correct_letter = letters[correct_idx]
+    correct_letter = letters[target_pos]
     return letters, pool, correct_letter
 
 
@@ -187,6 +196,12 @@ class BaseGenerator(ABC):
             fmt: generators_dir / f"{self.name}_{fmt}.jsonl"
             for fmt in self.SUPPORTED_FORMATS
         }
+
+        # Per-format counters for balanced MC answer positioning.
+        # Separate counter per format string prevents interleaving bias
+        # when multiple MC formats share the same num_choices (e.g. mc4 + mc4_passage).
+        # Thread-safe via GIL on next().
+        self._mc_counters = defaultdict(itertools.count)
 
         if not self.needs_corpus:
             return self._run_metadata_based(

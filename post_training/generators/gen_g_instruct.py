@@ -38,7 +38,8 @@ class GenGInstruct(BaseGenerator):
             if not short_answer or len(distractors) < 3:
                 return None
             letters, choices, correct = make_mc_choices(
-                short_answer, distractors, num_choices=4, seed=hash(instruction)
+                short_answer, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
             )
             passage = truncate_passage(source_chunk)
             passage_question = (
