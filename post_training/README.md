@@ -6,6 +6,8 @@ Synthetic data generation, quality filtering, and assembly for historical LLM po
 
 | Step | What | How | Output |
 |------|------|-----|--------|
+| 0a | Export main corpus | `python -m src.post_training.corpus.export --period {P}` | `synthetic/input/{collection}/*.txt` |
+| 0b | Export news archives | `python -m src.post_training.corpus.export_additional --period {P}` | `synthetic/input/{dataset}.parquet` |
 | 1 | Generate synthetic data | `python -m src.post_training.generate --period {P} --generators A B C D E F G H` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
 | 2 | Validate + deduplicate | `python -m src.post_training.process --period {P}` | `quality/validated/`, `quality/deduped/` |
 | 3 | LAB temporal filter | `python -m src.post_training.instruct.filter --period {P} --submit --input-dir {deduped_dir}` | `final/filtered/` |
@@ -23,15 +25,15 @@ All data paths are on `D:\hist_LLM\` (local SSD). Period paths defined in `confi
 ## Pipeline Diagram
 
 ```
-generate.py          process.py             filter.py            assemble.py
------------          ----------             ---------            -----------
-Generators A-H  -->  Validate + Dedup  -->  LAB Filter    -->   Merge + Split
-  |                    |                    (Batch API)           |
-  v                    v                      |                   v
-by_generator/        quality/                 v                 final/train/
-gen_*_{fmt}.jsonl    validated/             final/              final/test/
-(19 format files)    deduped/               filtered/
-                     stats.json
+export.py              generate.py          process.py             filter.py            assemble.py
+export_additional.py   -----------          ----------             ---------            -----------
+--------------------   Generators A-H  -->  Validate + Dedup  -->  LAB Filter    -->   Merge + Split
+Export corpus docs       |                    |                    (Batch API)           |
+  |                      v                    v                      |                   v
+  v                    by_generator/        quality/                 v                 final/train/
+synthetic/input/       gen_*_{fmt}.jsonl    validated/             final/              final/test/
+{collection}/*.txt     (18 format files)    deduped/               filtered/
+{dataset}.parquet                           stats.json
 ```
 
 ---
@@ -80,6 +82,50 @@ Respond only with the letter of the correct answer.
 ---
 
 ## Step Details
+
+### Step 0: Export Corpus Documents
+
+Before generators can run, source documents must be exported into `synthetic/input/`. This is a **one-time setup per period** — once exported, generators can be re-run without re-exporting.
+
+Two scripts handle two types of sources:
+
+**`corpus/export.py`** — Exports from the main historical corpus (parquet shards in `D:\hist_LLM\corpus\raw\`).
+
+- Reads the metadata index (`document_metadata.parquet`) built by `build_index.py`
+- Applies a quality floor (top 50% by `predicted_quality` score from the embedding classifier)
+- Samples up to 10K documents per collection (deterministic seed=42)
+- Retrieves full text from raw parquet shards by identifier
+- Writes individual `.txt` files: `synthetic/input/{collection}/doc_00000.txt`
+- Covers ~26 collections (Caselaw, English-PD, US-PD-Books, USPTO, Wikisource, etc.)
+
+**`corpus/export_additional.py`** — Exports from 4 curated news archives (`D:\hist_LLM\additional_data\raw\`).
+
+- Loads articles for the period's year range from source-specific formats (parquet/JSON)
+- Filters by minimum text length (≥200 chars)
+- Samples up to 10K per dataset
+- Writes as single parquet files: `synthetic/input/{dataset}.parquet` (columns: `doc_name`, `text`)
+- Sources: NYT (filtered abstracts), Economist (OCR text), FT (cleaned), Newswire (cleaned)
+
+**Prerequisite:** `build_index.py` must have been run first to create `document_metadata.parquet`. This joins quality scores from the embedding classifier with collection labels from the raw corpus.
+
+```bash
+# Build metadata index (if not already done)
+python -m src.post_training.corpus.build_index --period 1900_1949
+
+# Export main corpus (writes ~110K .txt files)
+python -m src.post_training.corpus.export --period 1900_1949
+
+# Export news archives (writes 4 .parquet files, ~40K docs)
+python -m src.post_training.corpus.export_additional --period 1900_1949
+
+# Custom settings
+python -m src.post_training.corpus.export --period 1900_1949 --max-per-collection 5000 --quality-percentile 75
+python -m src.post_training.corpus.export_additional --period 1900_1949 --dataset economist ft --max-per-collection 500
+```
+
+**Output:** `D:\hist_LLM\periods\{period}\posttraining_data\synthetic\input\` populated with `.txt` directories and `.parquet` files.
+
+Generators read from `synthetic/input/` via `BaseGenerator._load_documents()`, which handles both formats transparently.
 
 ### Step 1: Generate Synthetic Data
 
@@ -257,8 +303,11 @@ post_training/
 │   ├── filter.py                      # LAB temporal filtering (Batch API)
 │   └── split.py                       # Train/test split (95/5)
 │
-├── corpus/                            # Legacy corpus Q&A generation
-│   ├── run_direct.py                  # Direct QA/CoT generation (generators A+B)
+├── corpus/                            # Corpus export + legacy generation
+│   ├── build_index.py                 # Build metadata index (quality + collection labels)
+│   ├── export.py                      # Export main corpus → synthetic/input/{collection}/*.txt
+│   ├── export_additional.py           # Export news archives → synthetic/input/{dataset}.parquet
+│   ├── run_direct.py                  # Legacy QA/CoT generation (superseded by generators/)
 │   ├── convert.py                     # Format converter
 │   └── synth_config.yaml              # Legacy config
 │
@@ -275,10 +324,11 @@ post_training/
 D:\hist_LLM\periods\{period}\posttraining_data\
 │
 ├── synthetic/
-│   ├── input/                         # Source corpus for generation
-│   │   ├── {collection}.parquet       # Parquet format (economist, ft, etc.)
-│   │   └── {collection}/              # Or txt directory format
-│   │       └── *.txt
+│   ├── input/                         # Source corpus for generation (Step 0)
+│   │   ├── {dataset}.parquet          # News archives: economist, ft, nyt_filtered, newswire
+│   │   │                              #   (columns: doc_name, text; from export_additional.py)
+│   │   └── {collection}/              # Main corpus collections: Caselaw, English-PD, etc.
+│   │       └── doc_00000.txt          #   (individual txt files; from export.py)
 │   ├── generated/                     # Legacy run_direct.py output
 │   │   └── {collection}/
 │   │       └── {collection}_qa_cot.jsonl
