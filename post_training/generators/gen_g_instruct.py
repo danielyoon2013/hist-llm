@@ -1,7 +1,7 @@
-"""Generator G: Instruction Following — multi-format (Open-ended, MC-4+Passage)."""
+"""Generator G: Instruction Following — passage-based format (MC-4+Passage)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_OPEN, FORMAT_MC4_PASSAGE,
+    BaseGenerator, FORMAT_MC4_PASSAGE,
     render_mc, make_mc_choices, truncate_passage,
 )
 from src.post_training.generators.prompts import INSTRUCT_PROMPT
@@ -11,7 +11,7 @@ class GenGInstruct(BaseGenerator):
 
     name = "gen_g_instruct"
     items_per_chunk = 2
-    SUPPORTED_FORMATS = (FORMAT_OPEN, FORMAT_MC4_PASSAGE)
+    SUPPORTED_FORMATS = (FORMAT_MC4_PASSAGE,)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return INSTRUCT_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
@@ -21,13 +21,6 @@ class GenGInstruct(BaseGenerator):
 
     def format_conversation(self, item, fmt, source_chunk=None):
         instruction = item.get("instruction", "")
-        response_text = item.get("response", "")
-
-        if fmt == FORMAT_OPEN:
-            return [
-                {"role": "user", "content": instruction},
-                {"role": "assistant", "content": response_text},
-            ]
 
         if fmt == FORMAT_MC4_PASSAGE:
             # RACE-style: passage + instruction as question, short answers as MC choices

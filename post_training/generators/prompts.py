@@ -22,7 +22,8 @@ Rules:
 3. Vary question types: cause-effect, comparison, analysis, inference, summary
 4. For each pair, also provide 3 plausible but INCORRECT alternative answers as "distractors"
 5. Distractors should be concise (similar length to the correct answer) and sound plausible
-6. Return a JSON object with key "qa_pairs" containing an array:
+6. Questions must be SELF-CONTAINED — answerable without seeing the source text. Do NOT use phrases like "according to the text", "the passage states", "mentioned above", or "the article". Instead, include enough context in the question itself.
+7. Return a JSON object with key "qa_pairs" containing an array:
 
 {{"qa_pairs": [{{"question": "Question 1?", "answer": "Answer 1.", "distractors": ["Wrong answer A.", "Wrong answer B.", "Wrong answer C."]}}]}}
 
@@ -42,6 +43,7 @@ Each example should have:
 2. Detailed reasoning steps that break down the problem
 3. A concise final answer
 4. 3 plausible but INCORRECT alternative final answers as "distractors"
+5. Questions must be SELF-CONTAINED — answerable without the source text. Do NOT reference "the text", "the passage", "the article", or "above". Include enough context in the question itself.
 
 Return a JSON object with key "cot_examples" containing an array:
 
@@ -53,7 +55,7 @@ Text:
 
 # ---------------------------------------------------------------------------
 # Generator C: Reading Comprehension (MC)
-# Formats: MC-4, MC-4+Passage, MC-2+Passage
+# Formats: MC-4+Passage, MC-2+Passage (passage-only — questions reference source text)
 # Already produces 4 choices — no prompt change needed
 # ---------------------------------------------------------------------------
 
@@ -107,6 +109,7 @@ Requirements:
 2. Create word problems that require mathematical reasoning (arithmetic, percentages, comparisons, rates)
 3. Each problem should have step-by-step reasoning and a final numerical answer
 4. Problems should be grounded in the historical context of the text
+5. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
 
 Return a JSON object:
 {{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units."}}]}}
@@ -128,6 +131,7 @@ Requirements:
 2. Create 4 possible completions (A, B, C, D): one correct (from the text) and three plausible but wrong
 3. The correct completion should follow naturally from the text
 4. Wrong completions should be grammatically correct but factually wrong or contextually inappropriate
+5. The context must be SELF-CONTAINED — it should make sense on its own without the source text. Do NOT reference "the text" or "the passage".
 
 Return a JSON object:
 {{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1", "B": "completion 2", "C": "completion 3", "D": "completion 4"}}, "correct": "C"}}]}}
@@ -138,7 +142,7 @@ Text:
 
 # ---------------------------------------------------------------------------
 # Generator G: Instruction Following
-# Formats: Open-ended, MC-4+Passage
+# Formats: MC-4+Passage (passage-only — instructions reference source text)
 # ---------------------------------------------------------------------------
 
 INSTRUCT_PROMPT = """Create {num_items} instruction-response pairs grounded in this text.

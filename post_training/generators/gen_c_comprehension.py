@@ -1,9 +1,9 @@
-"""Generator C: Reading Comprehension — multi-format (MC-4, MC-4+Passage, MC-2+Passage)."""
+"""Generator C: Reading Comprehension — passage-based formats (MC-4+Passage, MC-2+Passage)."""
 
 import random as _random
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, FORMAT_MC4_PASSAGE, FORMAT_MC2_PASSAGE,
+    BaseGenerator, FORMAT_MC4_PASSAGE, FORMAT_MC2_PASSAGE,
     render_mc, make_mc_choices, truncate_passage,
 )
 from src.post_training.generators.prompts import COMPREHENSION_PROMPT
@@ -13,7 +13,7 @@ class GenCComprehension(BaseGenerator):
 
     name = "gen_c_comprehension"
     items_per_chunk = 3
-    SUPPORTED_FORMATS = (FORMAT_MC4, FORMAT_MC4_PASSAGE, FORMAT_MC2_PASSAGE)
+    SUPPORTED_FORMATS = (FORMAT_MC4_PASSAGE, FORMAT_MC2_PASSAGE)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return COMPREHENSION_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
@@ -31,19 +31,6 @@ class GenCComprehension(BaseGenerator):
         correct_text = choices_dict.get(correct_letter, "")
         distractors = [choices_dict[l] for l in letters_4
                        if l != correct_letter and choices_dict.get(l)]
-
-        if fmt == FORMAT_MC4:
-            if len(distractors) < 3:
-                return None
-            letters, choices, correct = make_mc_choices(
-                correct_text, distractors, num_choices=4,
-                position_idx=next(self._mc_counters[fmt]),
-            )
-            user_msg = render_mc(question, letters, choices)
-            return [
-                {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct},
-            ]
 
         if fmt == FORMAT_MC4_PASSAGE:
             if not source_chunk or len(distractors) < 3:

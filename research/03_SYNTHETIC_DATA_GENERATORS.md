@@ -102,16 +102,16 @@ Now the supply side. Each of our 8 generators produces data in one or more forma
 |-----------|:----:|:----:|:------:|:------:|:----:|:---:|-------------------|
 | **A.** Factual QA | O | | | | O | | MMLU, ARC |
 | **B.** Chain-of-Thought | O | | | | O | O | ARC, GSM8K |
-| **C.** Reading Comprehension | O | | O | O | | | HellaSwag, RACE, BoolQ |
+| **C.** Reading Comprehension | | | O | O | | | RACE, BoolQ |
 | **D.** Temporal Reasoning | O | | | | O | | LAB Eval, Temp Consistency |
 | **E.** Quantitative | | | | | O | O | GSM8K (complement) |
 | **F.** Sentence Completion | O | O | | | | | HellaSwag, PIQA, WinoGrande |
-| **G.** Instruction Following | | | O | | O | | RACE, general |
+| **G.** Instruction Following | | | O | | | | RACE |
 | **H.** Anti-Hallucination | O | | | | O | | LAB Eval, Anti-H Diagnostic |
 | *GSM8K (retained)* | | | | | O | O | GSM8K |
 | *MATH (retained)* | | | | | O | O | GSM8K |
 
-This yields **18 active (generator, format) cells** plus 4 from external datasets, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
+This yields **16 active (generator, format) cells** plus 4 from external datasets, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
 
 **Format alignment principle:** Each generator's format variants are derived from the native evaluation formats of its target benchmarks. For example, Generator F targets HellaSwag (MC-4), PIQA (MC-2), and WinoGrande (MC-2), so it produces both MC-4 and MC-2 format variants. This ensures training data format matches evaluation format, isolating temporal knowledge as the measured variable.
 
@@ -418,11 +418,11 @@ Asst:  <think>
 
 ### Generator C: Reading Comprehension
 
-**Active format cells:** MC, Open-ended, CoT, Passage-based
+**Active format cells:** MC-4+Passage, MC-2+Passage (passage-only)
 **Sources:** All (universal)
 **Eval alignment:** RACE (primary), BoolQ (secondary)
 
-Unlike Generator A (standalone QA), Generator C includes the source passage in the training example. This trains the model to extract and synthesize from given text.
+Unlike Generator A (standalone QA), Generator C includes the source passage in the training example. This trains the model to extract and synthesize from given text. Questions naturally reference the passage, so only passage-based formats are produced — standalone MC-4 is covered by Generator A.
 
 #### Prompt Template
 
@@ -588,9 +588,9 @@ Asst:  A
 
 ### Generator G: Instruction Following
 
-**Active format cells:** Open-ended, Passage-based
+**Active format cells:** MC-4+Passage (passage-only)
 **Sources:** All (universal)
-**Eval alignment:** Format quality (no single benchmark; supports general instruction compliance)
+**Eval alignment:** RACE (passage-based MC; instructions reference the source text, so only passage format is produced — standalone open-ended is covered by Generators A and B)
 
 Replaces SmolTalk (460K conversations, 32.6% contaminated). Follows the LIMA principle: SFT teaches format, not knowledge.
 

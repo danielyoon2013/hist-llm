@@ -32,13 +32,13 @@ Export corpus docs       |                    |                    (Batch API)  
   |                      v                    v                      |                   v
   v                    by_generator/        quality/                 v                 final/train/
 synthetic/input/       gen_*_{fmt}.jsonl    validated/             final/              final/test/
-{collection}/*.txt     (18 format files)    deduped/               filtered/
+{collection}/*.txt     (16 format files)    deduped/               filtered/
 {dataset}.parquet                           stats.json
 ```
 
 ---
 
-## The 8 Generators (19 Format Cells)
+## The 8 Generators (16 Format Cells)
 
 Each generator produces multiple format variants from a single API call, aligned to external benchmark native formats. This ensures evaluation measures temporal knowledge, not format confusion.
 
@@ -46,12 +46,14 @@ Each generator produces multiple format variants from a single API call, aligned
 |----|------|-------|-------------------|---------------------|-------------|
 | A | Factual QA | corpus chunks | `mc4`, `open` | MMLU, ARC | 3 |
 | B | Chain-of-Thought | corpus chunks | `mc4`, `open`, `cot` | ARC, GSM8K | 2 |
-| C | Reading Comprehension | corpus passages | `mc4`, `mc4_passage`, `mc2_passage` | HellaSwag, RACE, BoolQ | 3 |
+| C | Reading Comprehension | corpus passages | `mc4_passage`, `mc2_passage` | RACE, BoolQ | 3 |
 | D | Temporal Reasoning | period metadata | `mc4`, `open` | LAB Eval | 5 |
 | E | Quantitative | corpus chunks | `open`, `cot` | GSM8K | 2 |
 | F | Sentence Completion | corpus sentences | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 |
-| G | Instruction Following | corpus passages | `open`, `mc4_passage` | RACE | 2 |
+| G | Instruction Following | corpus passages | `mc4_passage` | RACE | 2 |
 | H | Anti-Hallucination | period metadata | `mc4`, `open` | LAB Eval | 5 |
+
+**Self-contained questions:** Prompts for non-passage generators (A, B, E, F) explicitly instruct GPT to produce self-contained questions that are answerable without seeing the source text. Passage-based generators (C, G) include the source passage in the training conversation, so their questions may reference it.
 
 ### Format Key
 
@@ -132,7 +134,7 @@ Generators read from `synthetic/input/` via `BaseGenerator._load_documents()`, w
 Run one or more generators for a period. Each generator writes one JSONL file **per supported format** to `synthetic/by_generator/`.
 
 ```bash
-# Full run (all 8 generators, produces 19 format files)
+# Full run (all 8 generators, produces 16 format files)
 python -m src.post_training.generate --period 1900_1949 --generators A B C D E F G H
 
 # Test run (3 documents only, < $0.01)
@@ -245,7 +247,7 @@ All generators use `gpt-4o-mini` ($0.15/1M input, $0.60/1M output).
 
 | Item | Cost per Period |
 |------|----------------|
-| Generation (8 generators, 19 formats) | ~$4.00-5.50 |
+| Generation (8 generators, 16 formats) | ~$4.00-5.50 |
 | LAB filtering (Batch API) | ~$2-3 |
 | **Total per period** | **~$6-8.50** |
 | **All 6 periods** | **~$36-51** |
@@ -286,11 +288,11 @@ post_training/
 │   ├── prompts.py                     # All 8 prompt templates (with distractor requests)
 │   ├── gen_a_factual.py               # A: Factual QA (mc4, open)
 │   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, open, cot)
-│   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4, mc4_passage, mc2_passage)
+│   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4_passage, mc2_passage)
 │   ├── gen_d_temporal.py              # D: Temporal Reasoning (mc4, open; no corpus)
 │   ├── gen_e_quantitative.py          # E: Quantitative / Math (open, cot)
 │   ├── gen_f_completion.py            # F: Sentence Completion (mc4, mc2)
-│   ├── gen_g_instruct.py              # G: Instruction Following (open, mc4_passage)
+│   ├── gen_g_instruct.py              # G: Instruction Following (mc4_passage)
 │   └── gen_h_antihalluc.py            # H: Anti-Hallucination (mc4, open; no corpus)
 │
 ├── quality/                           # Quality pipeline
@@ -338,7 +340,6 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   │   ├── gen_b_cot_mc4.jsonl
 │   │   ├── gen_b_cot_open.jsonl
 │   │   ├── gen_b_cot_cot.jsonl
-│   │   ├── gen_c_comprehension_mc4.jsonl
 │   │   ├── gen_c_comprehension_mc4_passage.jsonl
 │   │   ├── gen_c_comprehension_mc2_passage.jsonl
 │   │   ├── gen_d_temporal_mc4.jsonl
@@ -347,7 +348,6 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   │   ├── gen_e_quantitative_cot.jsonl
 │   │   ├── gen_f_completion_mc4.jsonl
 │   │   ├── gen_f_completion_mc2.jsonl
-│   │   ├── gen_g_instruct_open.jsonl
 │   │   ├── gen_g_instruct_mc4_passage.jsonl
 │   │   ├── gen_h_antihalluc_mc4.jsonl
 │   │   └── gen_h_antihalluc_open.jsonl
