@@ -1297,7 +1297,7 @@ These require new logic beyond simple prompt addition:
 Implementation:
 1. `generators/temporal.py` — multi-document sampler + 3 level prompts
 2. `generators/quantitative.py` — numeric filter + generation + validation
-3. `generators/gen_h_antihalluc.py` — historical facts per-year generator (mc4, open; train-only)
+3. `generators/gen_h_histfacts.py` — historical facts per-year generator (mc4, open; train-only)
 4. `run_matrix.py` — orchestrator that runs generator x format x source
 
 **Effort:** 5-7 days | **API cost:** ~$100-150 per period

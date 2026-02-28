@@ -295,7 +295,7 @@ post_training/
 │   ├── gen_e_quantitative.py          # E: Quantitative / Math (open, cot)
 │   ├── gen_f_completion.py            # F: Sentence Completion (mc4, mc2)
 │   ├── gen_g_instruct.py              # G: Instruction Following (mc4_passage)
-│   └── gen_h_antihalluc.py            # H: Historical Facts & Dates (mc4, open; no corpus)
+│   └── gen_h_histfacts.py             # H: Historical Facts & Dates (mc4, open; no corpus)
 │
 ├── quality/                           # Quality pipeline
 │   ├── __init__.py
