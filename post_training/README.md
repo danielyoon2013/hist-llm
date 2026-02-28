@@ -33,16 +33,88 @@ All data paths are on `D:\hist_LLM\` (local SSD). Period paths defined in `confi
 ## Pipeline Diagram
 
 ```
-export.py              generate.py          process.py             filter.py            assemble.py
-export_additional.py   -----------          ----------             ---------            -----------
---------------------   Generators A-H  -->  Validate + Dedup  -->  LAB Filter    -->   Merge + Split
-Export corpus docs       |                    |                    (Batch API)           |
-  |                      v                    v                      |                   v
-  v                    by_generator/        quality/                 v                 final/train/
-synthetic/input/       gen_*_{fmt}.jsonl    validated/             final/              final/test/
-{collection}/*.txt     (16 format files)    deduped/               filtered/
-{dataset}.parquet                           stats.json
+Step 0 (one-time)      Step 1                   Step 2               Step 3              Step 4
+─────────────────      ──────                   ──────               ──────              ──────
+export.py              generate.py              process.py           filter.py           assemble.py
+export_additional.py   --target 1000000         validate + dedup     LAB temporal        merge + subsample
+                           |                        |                (Batch API)             |
+corpus → input/        Corpus gens (A-G):       quality/                |                final/train/
+  ~30 collections        15,833 docs →            validated/          final/               midtrain.jsonl (1M)
+  ~4 news archives       950K examples            deduped/            filtered/            sft.jsonl (10K)
+                       Metadata gens (D,H):                                              final/test/
+                         dynamic API calls →                                               test.jsonl (50K)
+                         50K examples
 ```
+
+---
+
+## How Allocation Works
+
+The `--target` parameter (default: 1,000,000) drives the entire pipeline. Here's the full flow:
+
+### 1. Split target between corpus and metadata generators
+
+```
+Total target: 1,000,000
+  ├── Metadata generators (D, H): 2.5% each = 25,000 each = 50,000 total
+  └── Corpus generators (A,B,C,E,F,G): remaining 95% = 950,000 total
+```
+
+### 2. Distribute corpus share proportionally
+
+Each corpus generator produces `items_per_chunk × num_formats` examples per chunk. This determines their relative weight:
+
+```
+Generator   items/chunk × formats = examples/chunk    weight
+─────────   ──────────────────────────────────────    ──────
+A (Factual)       3    ×    2    =    6                 6/30 = 20%
+B (CoT)           2    ×    3    =    6                 6/30 = 20%
+C (Comprehend)    3    ×    2    =    6                 6/30 = 20%
+E (Quant)         2    ×    2    =    4                 4/30 = 13.3%
+F (Completion)    3    ×    2    =    6                 6/30 = 20%
+G (Instruct)      2    ×    1    =    2                 2/30 = 6.7%
+                                     ──
+                              Total: 30 examples/chunk
+```
+
+### 3. Compute docs needed
+
+Each document → ~2 chunks → 30 examples/chunk = **60 examples per doc**
+
+```
+Docs needed = 950,000 / 60 = 15,833 docs
+```
+
+The system randomly samples 15,833 docs from whatever was exported in Step 0. All 6 corpus generators process the **same docs** — each chunk goes through every corpus generator, which is why one doc produces 60 examples total.
+
+### 4. Compute metadata generator API calls
+
+Metadata generators (D, H) don't use corpus docs — they generate from the period's year range alone.
+
+**Gen D (Temporal)**: `25,000 target / 2 formats = 12,500 raw items / 10 items per call = 1,250 API calls`
+
+**Gen H (Historical Facts)**: Generates per-year to avoid duplicates. For 1900-1949 (50 years):
+`12,500 raw items / 50 years = 250 items/year / 10 items per call = 25 calls/year × 50 years = 1,250 API calls`
+
+For 1678-1849 (172 years): `73 items/year → 8 calls/year × 172 years = 1,376 API calls`
+
+This ensures D and H produce **exactly 25,000 examples** regardless of how many years the period spans.
+
+### 5. Final allocation table
+
+| Gen | Type | % of 1M | Mid-Train Target | SFT (1%) |
+|-----|------|---------|----------------:|--------:|
+| A | corpus | 19.0% | 190,000 | 1,949 |
+| B | corpus | 19.0% | 190,000 | 1,949 |
+| C | corpus | 19.0% | 190,000 | 1,949 |
+| D | metadata | 2.5% | 25,000 | 256 |
+| E | corpus | 12.7% | 126,666 | 1,299 |
+| F | corpus | 19.0% | 190,000 | 1,949 |
+| G | corpus | 6.3% | 63,333 | 649 |
+| H | metadata | 2.5% | 25,000 | 0 (train-only) |
+| **Total** | | **100%** | **1,000,000** | **10,000** |
+
+All of this is computed automatically by `config.py:compute_allocation()`. You only specify `--target`.
 
 ---
 
@@ -50,18 +122,16 @@ synthetic/input/       gen_*_{fmt}.jsonl    validated/             final/       
 
 Each generator produces multiple format variants from a single API call, aligned to external benchmark native formats. This ensures evaluation measures temporal knowledge, not format confusion.
 
-| ID | Name | Input | Formats | Benchmarks | Items/Call | % of 1M | Target |
-|----|------|-------|---------|------------|-----------|---------|--------|
-| A | Factual QA | corpus | `mc4`, `open` | MMLU, ARC | 3 | 19.0% | 190,000 |
-| B | Chain-of-Thought | corpus | `mc4`, `open`, `cot` | ARC, GSM8K | 2 | 19.0% | 190,000 |
-| C | Reading Comprehension | corpus | `mc4_passage`, `mc2_passage` | RACE, BoolQ | 3 | 19.0% | 190,000 |
-| D | Temporal Reasoning | metadata | `mc4`, `open` | LAB Eval | 10 | 2.5% | 25,000 |
-| E | Quantitative | corpus | `open`, `cot` | GSM8K | 2 | 12.7% | 126,667 |
-| F | Sentence Completion | corpus | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 | 19.0% | 190,000 |
-| G | Instruction Following | corpus | `mc4_passage` | RACE | 2 | 6.3% | 63,333 |
-| H | Historical Facts | metadata | `mc4`, `open` | MMLU, LAB Eval | 10 | 2.5% | 25,000 |
-
-**Allocation logic:** Corpus generators (A-G) share 95% of the target proportionally based on `items_per_chunk × num_formats`. Metadata generators (D, H) each get 2.5%. At the default 1M target, corpus generators need **15,833 docs** (at 60 examples/doc = 2 chunks × 30 examples/chunk).
+| ID | Name | Input | Formats | Benchmarks | Items/Call |
+|----|------|-------|---------|------------|-----------|
+| A | Factual QA | corpus | `mc4`, `open` | MMLU, ARC | 3 |
+| B | Chain-of-Thought | corpus | `mc4`, `open`, `cot` | ARC, GSM8K | 2 |
+| C | Reading Comprehension | corpus | `mc4_passage`, `mc2_passage` | RACE, BoolQ | 3 |
+| D | Temporal Reasoning | metadata | `mc4`, `open` | LAB Eval | 10 |
+| E | Quantitative | corpus | `open`, `cot` | GSM8K | 2 |
+| F | Sentence Completion | corpus | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 |
+| G | Instruction Following | corpus | `mc4_passage` | RACE | 2 |
+| H | Historical Facts | metadata | `mc4`, `open` | MMLU, LAB Eval | 10 |
 
 **Self-contained questions:** Prompts for non-passage generators (A, B, E, F) explicitly instruct GPT to produce self-contained questions that are answerable without seeing the source text. Passage-based generators (C, G) include the source passage in the training conversation, so their questions may reference it.
 
@@ -279,20 +349,28 @@ python -m src.post_training.instruct.split --period 1900_1949 --dry-run
 
 ---
 
-## API Cost Estimate
+## API Usage and Cost
 
-All generators use `gpt-4o-mini` ($0.15/1M input, $0.60/1M output). Batch API (50% discount): $0.075/1M input, $0.30/1M output.
+### Which API is used where?
 
-| Item | Regular API | Batch API (50% off) |
-|------|------------:|--------------------:|
-| Generation (1M target, 15,833 docs) | ~$280/period | ~$140/period |
-| LAB filtering | ~$3/period | ~$1.50/period |
-| **Total per period** | **~$283** | **~$142** |
-| **All 6 periods** | **~$1,700** | **~$850** |
+| Step | API Type | Why |
+|------|----------|-----|
+| **Step 1: Generate** | **Regular API** (synchronous) | Real-time generation with ThreadPoolExecutor (50 concurrent workers). Each API call returns JSON which is immediately parsed and rendered into multiple formats. |
+| **Step 3: LAB Filter** | **Batch API** (async, 50% discount) | Filtering is embarrassingly parallel and not time-sensitive. Submit all items, wait ~24h, collect results. |
 
-Multi-format rendering adds zero extra API cost (same API call produces all format variants).
+Generation uses `gpt-4o-mini` via the regular OpenAI API (`client.chat.completions.create()`). Multi-format rendering adds zero extra API cost — one API call per chunk returns all fields needed for every format variant.
 
-For testing, use `--target 180` for ~3 docs worth (~$0.01).
+### Cost Estimate
+
+GPT-4o-mini pricing: $0.15/1M input tokens, $0.60/1M output tokens.
+
+| Item | Cost/Period | x 6 Periods |
+|------|----------:|----------:|
+| Generation (1M target, 15,833 docs + D/H calls) | ~$280 | ~$1,680 |
+| LAB filtering (Batch API, 50% off) | ~$1.50 | ~$9 |
+| **Total** | **~$282** | **~$1,689** |
+
+For testing, use `--target 180` for ~3 docs worth (< $0.01).
 
 ---
 
