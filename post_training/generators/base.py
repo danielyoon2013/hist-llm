@@ -1,9 +1,12 @@
 """
 Base class for all synthetic data generators.
 
-Extracts common patterns from run_direct.py:
+Supports two execution modes:
+- Batch API (submit/check/process): 50% cost savings, ~24h turnaround
+- Sync API (--sync flag): ThreadPoolExecutor, instant results for testing
+
+Common patterns:
 - Text chunking (6000 chars, 300 overlap)
-- OpenAI API calls with retry (ThreadPoolExecutor)
 - JSONL output in nanochat CustomJSON format
 - Multi-format rendering (MC-4, MC-2, Open, CoT, Passage variants)
 """
@@ -169,21 +172,47 @@ class BaseGenerator(ABC):
         ...
 
     def run(self, period, collections=None, max_workers=50, max_docs=None,
-            chunk_size=6000, overlap=300, target_examples=None):
+            chunk_size=6000, overlap=300, target_examples=None, action="run"):
         """Run this generator for a period, producing per-format output files.
 
         Args:
             target_examples: Target number of output examples for this generator.
                 For metadata-based generators (D, H), this controls the number
                 of API calls. For corpus-based generators, use max_docs instead.
+            action: Execution mode:
+                "submit"  — build prompts and submit OpenAI batch (no API key needed for check)
+                "check"   — handled at generate.py level, returns None
+                "process" — download batch results and write output files
+                "run"     — legacy sync mode (ThreadPoolExecutor)
 
         Returns:
-            Dict of {format: Path} for output files, or None on failure.
+            For "submit": batch_id string or None.
+            For "process"/"run": Dict of {format: Path} for output files, or None.
+            For "check": None.
         """
-        from openai import OpenAI
-
         paths = get_paths(period)
         start_year, end_year = PERIODS[period]
+
+        print(f"Generator: {self.name}")
+        print(f"Period: {period} ({start_year}-{end_year})")
+        print(f"Formats: {list(self.SUPPORTED_FORMATS)}")
+        if target_examples:
+            print(f"Target: {target_examples:,} examples")
+
+        # --- Batch API dispatch ---
+        if action == "submit":
+            return self.submit_batch_requests(
+                period, collections=collections, max_docs=max_docs,
+                chunk_size=chunk_size, overlap=overlap,
+                target_examples=target_examples,
+            )
+        elif action == "process":
+            return self.process_batch_results(period)
+        elif action == "check":
+            return None  # handled at generate.py level
+
+        # --- Sync mode (action="run") ---
+        from openai import OpenAI
 
         generators_dir = paths["synthetic_dir"] / "by_generator"
         os.makedirs(generators_dir, exist_ok=True)
@@ -191,11 +220,6 @@ class BaseGenerator(ABC):
         api_key = load_api_key()
         client = OpenAI(api_key=api_key)
 
-        print(f"Generator: {self.name}")
-        print(f"Period: {period} ({start_year}-{end_year})")
-        print(f"Formats: {list(self.SUPPORTED_FORMATS)}")
-        if target_examples:
-            print(f"Target: {target_examples:,} examples")
         print(f"Max workers: {max_workers}")
         print(f"Model: {MODEL}")
 
@@ -354,6 +378,195 @@ class BaseGenerator(ABC):
             print(f"  {fmt}: {count:,} conversations")
 
         print(f"Complete. {total_convs:,} total conversations. Failed: {failed}")
+        return output_paths
+
+    # ------------------------------------------------------------------
+    # Batch API methods (submit / process)
+    # ------------------------------------------------------------------
+
+    def submit_batch_requests(self, period, collections=None, max_docs=None,
+                              chunk_size=6000, overlap=300, target_examples=None):
+        """Build prompts and submit as an OpenAI batch.
+
+        Creates files in batch_temp/:
+          {name}_requests.jsonl   — batch API request file
+          {name}_manifest.jsonl   — custom_id -> chunk_text mapping
+          {name}_batch_id.txt     — batch ID for retrieval
+
+        Returns batch_id string, or None on failure.
+        """
+        from src.post_training.utils import create_batch_request_file, submit_batch
+
+        paths = get_paths(period)
+        start_year, end_year = PERIODS[period]
+        batch_dir = paths["batch_temp_dir"]
+        os.makedirs(batch_dir, exist_ok=True)
+
+        # Build task list: [(custom_id, prompt_str, chunk_text_or_None), ...]
+        if self.needs_corpus:
+            docs = self._load_documents(paths, collections, max_docs)
+            if not docs:
+                print("No documents found!")
+                return None
+            tasks = []
+            for doc_idx, (doc_name, text) in enumerate(docs):
+                chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+                for chunk_idx, chk in enumerate(chunks):
+                    cid = f"{self.name}_{doc_idx}_{chunk_idx}"
+                    prompt = self.build_prompt(chk, period, start_year, end_year)
+                    tasks.append((cid, prompt, chk))
+        else:
+            tasks = self._build_metadata_tasks(
+                period, start_year, end_year, target_examples,
+            )
+
+        if not tasks:
+            print("No tasks to submit!")
+            return None
+
+        total = len(tasks)
+        print(f"Submitting {total:,} batch requests")
+
+        # Write manifest (custom_id -> chunk_text for passage generators)
+        manifest_path = batch_dir / f"{self.name}_manifest.jsonl"
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            for cid, _, chunk_val in tasks:
+                entry = {"custom_id": cid}
+                if chunk_val is not None:
+                    entry["chunk_text"] = chunk_val
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+        # Write batch request file
+        requests = []
+        for cid, prompt, _ in tasks:
+            requests.append({
+                "custom_id": cid,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 4096,
+                "temperature": 0.7,
+            })
+
+        request_path = batch_dir / f"{self.name}_requests.jsonl"
+        create_batch_request_file(requests, str(request_path))
+
+        # Submit batch
+        batch_id = submit_batch(
+            str(request_path),
+            description=f"{self.name}_{period}",
+        )
+
+        # Save batch ID
+        id_path = batch_dir / f"{self.name}_batch_id.txt"
+        with open(id_path, "w") as f:
+            f.write(batch_id)
+        print(f"  Batch ID saved: {id_path.name}")
+
+        return batch_id
+
+    def _build_metadata_tasks(self, period, start_year, end_year,
+                              target_examples=None):
+        """Build (custom_id, prompt, None) tuples for metadata generators.
+
+        Default implementation for Gen D. Gen H overrides this.
+        """
+        num_formats = len(self.SUPPORTED_FORMATS)
+        if target_examples and num_formats > 0:
+            raw_needed = target_examples // num_formats
+            num_batches = max(1, -(-raw_needed // self.items_per_chunk))
+        else:
+            num_batches = self.num_batches
+
+        print(f"  {num_batches} metadata batches x {self.items_per_chunk} items/batch")
+
+        tasks = []
+        for batch_num in range(1, num_batches + 1):
+            cid = f"{self.name}_batch_{batch_num}"
+            prompt = self.build_prompt(batch_num, period, start_year, end_year)
+            tasks.append((cid, prompt, None))
+        return tasks
+
+    def process_batch_results(self, period):
+        """Download batch results, parse, format, validate, and write output.
+
+        Reads batch_temp/{name}_batch_id.txt and {name}_manifest.jsonl.
+        Writes by_generator/{name}_{fmt}.jsonl (identical output to sync mode).
+
+        Returns dict of {format: Path} output files, or None if not ready.
+        """
+        from src.post_training.utils import download_batch_results
+
+        paths = get_paths(period)
+        batch_dir = paths["batch_temp_dir"]
+        generators_dir = paths["synthetic_dir"] / "by_generator"
+        os.makedirs(generators_dir, exist_ok=True)
+
+        # Read batch ID
+        id_path = batch_dir / f"{self.name}_batch_id.txt"
+        if not id_path.exists():
+            print(f"No batch ID found at {id_path}")
+            return None
+        batch_id = id_path.read_text().strip()
+
+        # Download results
+        results_path = batch_dir / f"{self.name}_results.jsonl"
+        results = download_batch_results(batch_id, str(results_path))
+        if results is None:
+            print(f"Batch not complete yet")
+            return None
+
+        # Load manifest (custom_id -> chunk_text)
+        manifest = {}
+        manifest_path = batch_dir / f"{self.name}_manifest.jsonl"
+        if manifest_path.exists():
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    entry = json.loads(line.strip())
+                    manifest[entry["custom_id"]] = entry.get("chunk_text")
+
+        # Build output paths
+        output_paths = {
+            fmt: generators_dir / f"{self.name}_{fmt}.jsonl"
+            for fmt in self.SUPPORTED_FORMATS
+        }
+
+        # Initialize MC counters
+        self._mc_counters = defaultdict(itertools.count)
+
+        # Process each result
+        all_results = {fmt: [] for fmt in self.SUPPORTED_FORMATS}
+        parsed_ok = 0
+        parsed_fail = 0
+
+        for custom_id, response_body in results:
+            try:
+                response = json.loads(response_body)
+            except json.JSONDecodeError:
+                parsed_fail += 1
+                continue
+
+            items = self.parse_response(response)
+            chunk_val = manifest.get(custom_id)
+
+            for item in items:
+                for fmt in self.SUPPORTED_FORMATS:
+                    conv = self.format_conversation(item, fmt, source_chunk=chunk_val)
+                    if conv is None:
+                        continue
+                    valid, _ = validate_conversation(conv)
+                    if valid:
+                        all_results[fmt].append(conv)
+            parsed_ok += 1
+
+        # Write output files
+        total_convs = 0
+        for fmt in self.SUPPORTED_FORMATS:
+            write_jsonl(all_results[fmt], str(output_paths[fmt]))
+            count = len(all_results[fmt])
+            total_convs += count
+            print(f"  {fmt}: {count:,} conversations -> {output_paths[fmt].name}")
+
+        print(f"Complete. {total_convs:,} total conversations. "
+              f"Parsed: {parsed_ok:,} OK, {parsed_fail:,} failed")
         return output_paths
 
     def _load_documents(self, paths, collections, max_docs):

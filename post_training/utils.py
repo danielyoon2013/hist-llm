@@ -106,6 +106,8 @@ def create_batch_request_file(requests, output_path):
                 "max_tokens": req.get("max_tokens", 256),
                 "response_format": {"type": "json_object"},
             }
+            if "temperature" in req:
+                body["temperature"] = req["temperature"]
             line = {
                 "custom_id": req["custom_id"],
                 "method": "POST",

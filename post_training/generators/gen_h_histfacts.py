@@ -64,6 +64,44 @@ class GenHHistFacts(BaseGenerator):
 
         return None
 
+    def _build_metadata_tasks(self, period, start_year, end_year,
+                              target_examples=None):
+        """Override: per-year task generation for batch mode.
+
+        Same scaling logic as _run_metadata_based(), but returns
+        (custom_id, prompt, None) tuples instead of executing API calls.
+        """
+        years = list(range(start_year, end_year + 1))
+        num_years = len(years)
+        num_formats = len(self.SUPPORTED_FORMATS)
+
+        if target_examples and num_formats > 0:
+            raw_needed = target_examples // num_formats
+        else:
+            raw_needed = num_years * self.items_per_chunk
+
+        items_per_year = math.ceil(raw_needed / num_years)
+        calls_per_year = math.ceil(items_per_year / self.items_per_chunk)
+        total_calls = num_years * calls_per_year
+
+        print(f"  {num_years} years x {calls_per_year} calls/year "
+              f"x {self.items_per_chunk} items/call = ~{raw_needed:,} raw items")
+        print(f"  Total API calls: {total_calls:,}")
+
+        tasks = []
+        for year in years:
+            for call_idx in range(calls_per_year):
+                remaining = items_per_year - call_idx * self.items_per_chunk
+                items_this_call = min(self.items_per_chunk, remaining)
+                if items_this_call <= 0:
+                    break
+                cid = f"{self.name}_y{year}_c{call_idx}"
+                prompt = self.build_prompt(
+                    year, period, start_year, end_year, num_items=items_this_call,
+                )
+                tasks.append((cid, prompt, None))
+        return tasks
+
     def _run_metadata_based(self, client, period, start_year, end_year,
                             max_workers, output_paths, target_examples=None):
         """Override: multiple API calls per year, scaled to hit target_examples.

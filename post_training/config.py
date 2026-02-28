@@ -69,6 +69,7 @@ def get_paths(period: str):
         "lab_eval_dir": period_data / "posttraining_data" / "eval",
         "synthetic_dir": period_data / "posttraining_data" / "synthetic",
         "generators_dir": period_data / "posttraining_data" / "synthetic" / "by_generator",
+        "batch_temp_dir": period_data / "posttraining_data" / "synthetic" / "batch_temp",
         "quality_dir": period_data / "posttraining_data" / "quality",
         "validated_dir": period_data / "posttraining_data" / "quality" / "validated",
         "deduped_dir": period_data / "posttraining_data" / "quality" / "deduped",
