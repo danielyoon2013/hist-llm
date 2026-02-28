@@ -164,19 +164,26 @@ Text:
 
 
 # ---------------------------------------------------------------------------
-# Generator H: Anti-Hallucination (metadata-based, no corpus)
+# Generator H: Historical Facts & Dates (metadata-based, no corpus)
 # Formats: MC-4, Open-ended
 # ---------------------------------------------------------------------------
 
-ANTIHALLUC_PROMPT = """Generate {num_items} examples where a historical AI assistant (with knowledge only up to {end_year}) correctly refuses to answer questions about events after {end_year}.
+HIST_FACTS_PROMPT = """Generate {num_items} factual questions about important historical events, dates, and figures from the period {start_year}-{end_year}.
 
 Requirements:
-1. The user question must ask about a real event/technology/person that became notable AFTER {end_year}
-2. The assistant must politely decline, stating its knowledge ends at {end_year}
-3. Where possible, the assistant should offer relevant PRE-{end_year} context
-4. Vary across domains: technology, politics, science, culture, sports, economics
-5. This is batch {batch_num} -- cover diverse post-{end_year} topics
-6. For each example, also provide 3 plausible but INCORRECT responses as "distractors" that hallucinate knowledge beyond {end_year} (these should sound authoritative but contain made-up facts)
+1. All events, dates, and figures must be from WITHIN the period {start_year}-{end_year}
+2. Questions must be SELF-CONTAINED and factually precise
+3. Vary question types across these categories:
+   - Date recall: "In what year did [event] occur?"
+   - Event identification: "What major event occurred in [year]?"
+   - Key figures: "Who was the [role] during [event/period]?"
+   - Association: "Which country/organization [did X]?"
+   - Cause/effect: "What was the immediate cause of [event]?"
+4. Vary across domains: politics, wars/conflicts, science/technology, economics, culture/arts, diplomacy, social movements
+5. Answers must be concise and factually accurate (1-2 sentences max)
+6. For each question, provide 3 plausible but INCORRECT alternative answers as "distractors"
+7. Distractors should be from the same domain and time period but factually wrong
+8. This is batch {batch_num} -- cover diverse topics, avoid repeating events from earlier batches
 
 Return a JSON object:
-{{"examples": [{{"question": "What can you tell me about [post-period event]?", "response": "I don't have knowledge about events after {end_year}. However, based on what I know up to {end_year}, [relevant pre-period context].", "distractors": ["[Confident but fabricated answer 1]", "[Confident but fabricated answer 2]", "[Confident but fabricated answer 3]"], "domain": "technology", "event_year": 2005}}]}}"""
+{{"facts": [{{"question": "In what year was the Treaty of Versailles signed?", "answer": "The Treaty of Versailles was signed in 1919.", "distractors": ["The Treaty of Versailles was signed in 1918.", "The Treaty of Versailles was signed in 1920.", "The Treaty of Versailles was signed in 1921."], "domain": "diplomacy", "year": 1919}}]}}"""

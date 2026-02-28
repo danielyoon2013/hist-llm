@@ -51,7 +51,7 @@ Each generator produces multiple format variants from a single API call, aligned
 | E | Quantitative | corpus chunks | `open`, `cot` | GSM8K | 2 |
 | F | Sentence Completion | corpus sentences | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 |
 | G | Instruction Following | corpus passages | `mc4_passage` | RACE | 2 |
-| H | Anti-Hallucination | period metadata | `mc4`, `open` | LAB Eval | 5 |
+| H | Historical Facts | period metadata | `mc4`, `open` | MMLU, LAB Eval | 5 |
 
 **Self-contained questions:** Prompts for non-passage generators (A, B, E, F) explicitly instruct GPT to produce self-contained questions that are answerable without seeing the source text. Passage-based generators (C, G) include the source passage in the training conversation, so their questions may reference it.
 
@@ -68,7 +68,7 @@ Each generator produces multiple format variants from a single API call, aligned
 
 **Corpus-based** (A, B, C, E, F, G): Read text from `synthetic/input/` (parquet or txt), chunk at 6000 chars / 300 overlap, call GPT-4o-mini per chunk.
 
-**Metadata-based** (D, H): Generate from period year range alone (no corpus needed). D creates temporal ordering questions; H creates refusal examples for events after the period's end year.
+**Metadata-based** (D, H): Generate from period year range alone (no corpus needed). D creates temporal ordering/reasoning questions; H creates factual date/event recall questions (e.g., "In what year was the Treaty of Versailles signed?").
 
 **MC format** matches nanochat's `render_mc()` exactly (choice text BEFORE letter for better token binding in small models):
 ```
@@ -293,7 +293,7 @@ post_training/
 │   ├── gen_e_quantitative.py          # E: Quantitative / Math (open, cot)
 │   ├── gen_f_completion.py            # F: Sentence Completion (mc4, mc2)
 │   ├── gen_g_instruct.py              # G: Instruction Following (mc4_passage)
-│   └── gen_h_antihalluc.py            # H: Anti-Hallucination (mc4, open; no corpus)
+│   └── gen_h_antihalluc.py            # H: Historical Facts & Dates (mc4, open; no corpus)
 │
 ├── quality/                           # Quality pipeline
 │   ├── __init__.py

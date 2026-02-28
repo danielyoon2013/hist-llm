@@ -90,9 +90,9 @@ Now, the content tested by these external benchmarks can be naturally classified
 | **E.** Quantitative | | | O | | | | | |
 | **F.** Sentence Completion | | | | O | | O | O | |
 | **G.** Instruction Following | | | | | | | | O |
-| **H.** Anti-Hallucination | | | | | | | | |
+| **H.** Historical Facts | | | | | | | | |
 
-Generators A-C and E-G each serve at least one external benchmark. **D and H have no external benchmark coverage** — they are novel generators designed for our project-specific diagnostic evaluations (LAB Eval, Temporal Consistency, Anti-Hallucination Diagnostic). These are introduced in Section 1c.
+Generators A-C and E-G each serve at least one external benchmark. **D** has no external benchmark coverage — it is a novel generator designed for our project-specific diagnostic evaluations (LAB Eval, Temporal Consistency). **H** (Historical Facts) targets MMLU and LAB Eval with factual date/event recall. These are introduced in Section 1c.
 
 ### 1c. Our Response: Generator (Content) x Format Matrix
 
@@ -107,7 +107,7 @@ Now the supply side. Each of our 8 generators produces data in one or more forma
 | **E.** Quantitative | | | | | O | O | GSM8K (complement) |
 | **F.** Sentence Completion | O | O | | | | | HellaSwag, PIQA, WinoGrande |
 | **G.** Instruction Following | | | O | | | | RACE |
-| **H.** Anti-Hallucination | O | | | | O | | LAB Eval, Anti-H Diagnostic |
+| **H.** Historical Facts | O | | | | O | | MMLU, LAB Eval |
 | *GSM8K (retained)* | | | | | O | O | GSM8K |
 | *MATH (retained)* | | | | | O | O | GSM8K |
 
@@ -128,7 +128,7 @@ The third dimension is **source** — which corpus collection provides the input
 | **E.** Quantitative | O | | O | | | | | O |
 | **F.** Sentence Completion | O | O | O | O | O | O | O | O |
 | **G.** Instruction Following | O | O | O | O | O | O | O | O |
-| **H.** Anti-Hallucination | — | — | — | — | — | — | — | — |
+| **H.** Historical Facts | O | O | O | O | O | O | O | O |
 
 Three patterns emerge:
 
@@ -175,7 +175,7 @@ Every generator was designed to target specific evaluation benchmarks. Conversel
 | **E. Quantitative** | | | `**` | | | | | | | | | |
 | **F. Completion** | | | | `**` | | `*` | `*` | | | | | |
 | **G. Instruction** | | | | | | | | `.` | | | | |
-| **H. Anti-Halluc** | | | | | | | | | `**` | | `**` | `**` |
+| **H. Hist Facts** | | | | | | | | | `**` | | `**` | `**` |
 | *External: GSM8K* | | | `**` | | | | | | | | | |
 | *External: MATH* | | | `*` | | | | | | | | | |
 
@@ -220,10 +220,9 @@ Which training data formats cover each evaluation benchmark. **O** = format dire
 | PIQA | F (Completion) | Physical intuition |
 | WinoGrande | F (Completion) | Coreference resolution |
 | RACE | B (Reasoning), C (Comprehension) | Long-passage comprehension |
-| LAB Eval | D (Temporal), H (Anti-Halluc) | Temporal isolation (**core thesis**) |
-| LAP Score | D (Temporal), H (Anti-Halluc) | Leakage quantification |
+| LAB Eval | D (Temporal), H (Hist Facts) | Temporal isolation (**core thesis**) |
+| LAP Score | D (Temporal), H (Hist Facts) | Leakage quantification |
 | Temporal Consistency | D (Temporal) | Period awareness probes |
-| Anti-Halluc Diagnostic | H (Anti-Halluc) | Refusal rate on post-period questions |
 
 ### The Ablation Story
 
@@ -231,7 +230,7 @@ This alignment enables clean generator ablation studies:
 
 - Remove Generator D -> LAB Eval degrades (more temporal leakage)
 - Remove Generator F -> HellaSwag drops
-- Remove Generator H -> Anti-Hallucination Diagnostic fails
+- Remove Generator H -> MMLU history questions and LAB Eval factual recall degrade
 - Remove GSM8K external -> GSM8K eval drops (but Generator E partially compensates)
 - All generators present -> Full coverage across all evaluations
 
@@ -1303,7 +1302,7 @@ Asst:  As of 1999, the euro had just been introduced as an accounting
 | E. Quantitative | 5% | 25,000 | 5% | 3,750 | 28,750 |
 | F. Sentence Completion | 5% | 25,000 | 5% | 3,750 | 28,750 |
 | G. Instruction Following | 5% | 25,000 | 15% | 11,250 | 36,250 |
-| H. Anti-Hallucination | 5% | 25,000 | 5% | 3,750 | 28,750 |
+| H. Historical Facts | 5% | 25,000 | 5% | 3,750 | 28,750 |
 | GSM8K (external) | 5% | 7,285 | 3% | 2,250 | 9,535 |
 | MATH (external) | 5% | 7,477 | 2% | 1,500 | 8,977 |
 | **Total** | | **~464K** | | **~75K** | **~539K** |
