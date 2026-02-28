@@ -168,10 +168,10 @@ Text:
 # Formats: MC-4, Open-ended
 # ---------------------------------------------------------------------------
 
-HIST_FACTS_PROMPT = """Generate {num_items} factual questions about important historical events, dates, and figures from the period {start_year}-{end_year}.
+HIST_FACTS_PROMPT = """Generate {num_items} factual questions about important historical events, dates, and figures from the year {year} (within the broader period {start_year}-{end_year}).
 
 Requirements:
-1. All events, dates, and figures must be from WITHIN the period {start_year}-{end_year}
+1. All events, dates, and figures must be from the year {year} specifically
 2. Questions must be SELF-CONTAINED and factually precise
 3. Vary question types across these categories:
    - Date recall: "In what year did [event] occur?"
@@ -183,7 +183,7 @@ Requirements:
 5. Answers must be concise and factually accurate (1-2 sentences max)
 6. For each question, provide 3 plausible but INCORRECT alternative answers as "distractors"
 7. Distractors should be from the same domain and time period but factually wrong
-8. This is batch {batch_num} -- cover diverse topics, avoid repeating events from earlier batches
+8. If the year {year} has fewer notable events, include events that BEGAN or were ONGOING in {year}
 
 Return a JSON object:
 {{"facts": [{{"question": "In what year was the Treaty of Versailles signed?", "answer": "The Treaty of Versailles was signed in 1919.", "distractors": ["The Treaty of Versailles was signed in 1918.", "The Treaty of Versailles was signed in 1920.", "The Treaty of Versailles was signed in 1921."], "domain": "diplomacy", "year": 1919}}]}}"""

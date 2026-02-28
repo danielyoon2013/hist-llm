@@ -134,7 +134,7 @@ Three patterns emerge:
 
 - **A, B, C, F, G** are **universal** — they extract questions from any well-formed passage (news, court rulings, books, treaties)
 - **D, E** are **source-selective** — D needs news sources for temporal chains and causation; E needs economic/trade sources for real numbers (trade statistics, market data, demographics). Forcing these generators onto unsuitable collections (e.g., math from patents) produces low-quality output.
-- **H** is **source-independent** — it generates questions about post-period events that the model should *not* know. No corpus text is needed; the prompt alone suffices.
+- **H** is **source-independent** — it generates factual recall questions about historical events and dates from the period's year range. No corpus text is needed; the prompt alone suffices. Generated per-year (one API call per year) to eliminate duplicates. Train-only (no test split).
 
 ### 1e. External Datasets Retained
 
@@ -1056,193 +1056,59 @@ Asst:  300% increase. Calculation: ($12 - $3) / $3 * 100 = 300%.
 
 ---
 
-### Generator H: Anti-Hallucination / Temporal Boundary Enforcement
+### Generator H: Historical Facts & Dates
 
-**Active format cells:** MC, Open-ended, T/F
-**Sources:** Source-independent (questions are about post-period events, not corpus text). Corpus knowledge grounds the refusal responses.
-**Eval alignment:** LAB Eval (primary), Anti-Hallucination Diagnostic (primary), LAP Score
+**Active format cells:** MC-4, Open-ended
+**Sources:** Metadata-based — generates from period year range alone (no corpus). One API call per year in the period.
+**Eval alignment:** MMLU (primary), LAB Eval (primary)
+**Train-only:** Factual recall data is placed entirely in training; evaluation is via external benchmarks (MMLU, LAB Eval), not a held-out test split.
 
-**Directly supports the core thesis.** This is the only generator that trains the model to say "I don't know" — to respect its temporal knowledge boundary. Two subtypes:
+Teaches the model factual knowledge about historical events, dates, and figures. Unlike generators A-G which derive content from corpus documents, Gen H generates facts directly from the year range, ensuring broad coverage of notable events.
 
-1. **Direct refusal** (70% of output) — Ask about post-period events, expect refusal
-2. **Boundary probing** (30% of output) — Ask about topics where partial answers exist within the period
+#### Per-Year Generation
 
-#### Subtype 1: Direct Post-Period Questions
+To eliminate duplicate facts (which occurred with generic batch-based generation where major events like WWI appeared in multiple batches), Gen H generates **one API call per year**. For example, the 1900-1949 period makes 50 API calls (one for each year), each requesting 5 facts about events from that specific year.
 
-```
-ANTI_HALLUC_DIRECT_PROMPT = """Generate {num_pairs} question-answer pairs where
-the question asks about events, technologies, or developments that occurred
-AFTER the year {end_year}.
+This gives ~250 items per period (50 years x 5 items), with near-zero duplication since each year's prompt is constrained to events from that year only.
 
-For each pair, specify FORMAT from: mc, open_ended, true_false
+#### Question Types
 
-The correct response must ALWAYS:
-1. Acknowledge the question
-2. State clearly that the information is beyond the model's knowledge period
-3. Offer what WAS known as of {end_year} (if relevant context exists)
-4. VARY the refusal phrasing — do not use the same template repeatedly
+The prompt requests diverse question types across domains:
+- **Date recall:** "In what year did [event] occur?"
+- **Event identification:** "What major event occurred in [year]?"
+- **Key figures:** "Who was the [role] during [event/period]?"
+- **Association:** "Which country/organization [did X]?"
+- **Cause/effect:** "What was the immediate cause of [event]?"
 
-Topics to cover (vary across pairs):
-- Technology invented after {end_year}
-- Political events after {end_year}
-- Cultural phenomena that emerged after {end_year}
-- Scientific discoveries made after {end_year}
-- Companies or organizations founded after {end_year}
+Domains: politics, wars/conflicts, science/technology, economics, culture/arts, diplomacy, social movements.
 
-For MC format: create 4 options where the "correct" answer is
-"This event occurred after my knowledge period" or equivalent.
+#### Output Examples
 
-For T/F format: make a statement about a post-period event;
-the correct answer is "I cannot verify this" with explanation.
-
-Return JSON:
-{{"anti_halluc_pairs": [
-  {{"question": "...",
-    "answer": "...",
-    "format": "mc|open_ended|true_false",
-    "event_year": 2005,
-    "domain": "technology|politics|culture|science|economics|sports|medicine|space|environment|social"
-  }}
-]}}"""
-```
-
-**Output example (Open-ended format):**
+**Open-ended format:**
 ```json
 [
-  {"role": "user", "content": "What impact did the iPhone have on the telecommunications industry?"},
-  {"role": "assistant", "content": "I don't have information about the iPhone, as my knowledge covers the period up to 1999. As of that time, the mobile phone industry was rapidly evolving with Nokia, Motorola, and Ericsson as market leaders. WAP-enabled phones were beginning to bring basic internet access to mobile devices, and the industry was transitioning from analog to digital networks."}
+  {"role": "user", "content": "What major event occurred on August 6, 1945?"},
+  {"role": "assistant", "content": "On August 6, 1945, the United States dropped the first atomic bomb on Hiroshima, Japan, during World War II."}
 ]
 ```
 
-**Output example (MC format):**
+**MC-4 format:**
 ```json
 [
-  {"role": "user", "content": "Which social media platform, launched in 2004, became the world's largest social network?\nA) MySpace\nB) Facebook\nC) This refers to an event after my knowledge period\nD) Friendster"},
-  {"role": "assistant", "content": "C) This question refers to events after my knowledge period, which covers up to 1999. As of 1999, early social networking sites like SixDegrees.com (launched 1997) existed, but the large-scale social media platforms had not yet emerged."}
+  {"role": "user", "content": "Multiple Choice question: In what year was the Treaty of Versailles signed?\n- The Treaty of Versailles was signed in 1920.=A\n- The Treaty of Versailles was signed in 1919.=B\n- The Treaty of Versailles was signed in 1918.=C\n- The Treaty of Versailles was signed in 1921.=D\n\nRespond only with the letter of the correct answer."},
+  {"role": "assistant", "content": "B"}
 ]
 ```
 
-**Output example (T/F format):**
-```json
-[
-  {"role": "user", "content": "True or False: The Human Genome Project was completed in 2003."},
-  {"role": "assistant", "content": "I cannot verify the completion date, as my knowledge covers the period up to 1999. What I can confirm is that as of 1999, the Human Genome Project was well underway, having been launched in 1990 with an expected completion around 2003. A working draft was anticipated soon, but I cannot speak to whether the project met that timeline."}
-]
-```
+#### Comparison with Generator D (Temporal Reasoning)
 
-#### Subtype 2: Boundary Probing (Partial Knowledge)
-
-These are harder — the model must provide what it knows AND explicitly flag the limitation.
-
-```
-BOUNDARY_PROBE_PROMPT = """Generate {num_pairs} questions that probe the boundary
-of knowledge at year {end_year}.
-
-These should be questions where:
-- A partial answer exists within the period (ongoing trend, unresolved issue, pending outcome)
-- A full/updated answer requires post-{end_year} knowledge
-- The model should provide the partial answer AND explicitly note the limitation
-
-The answer should follow this pattern:
-"As of {end_year}, [what was known/happening]. [The situation was still developing /
-The outcome was not yet determined / Further developments occurred after my
-knowledge period]."
-
-For each pair, specify FORMAT from: open_ended, true_false
-
-Example for end_year=1999: Asking about "the outcome of the Kosovo conflict"
-(which was active in 1999 but resolved later).
-
-Return JSON:
-{{"boundary_pairs": [
-  {{"question": "...",
-    "answer": "...",
-    "format": "open_ended|true_false",
-    "context_note": "Brief note on what happened after {end_year} (not shown to model)"
-  }}
-]}}"""
-```
-
-**Output example (boundary probe):**
-```json
-[
-  {"role": "user", "content": "Was the European single currency successful?"},
-  {"role": "assistant", "content": "As of 1999, the euro had just been introduced as an accounting currency on January 1, 1999, with 11 EU member states participating. The European Central Bank had begun operations, and exchange rates were fixed. Physical euro banknotes and coins had not yet entered circulation (that was planned for 2002). Early indicators showed market confidence, but it is too early for me to assess the long-term success of the project, as the currency was still in its initial phase."}
-]
-```
-
-#### Domain Coverage
-
-Cross-reference with LAB Eval's 10 domains to ensure diverse coverage:
-
-| Domain | Direct Refusal Examples | Boundary Probe Examples |
-|--------|------------------------|------------------------|
-| Politics | Post-period elections, leaders | Ongoing conflicts, pending legislation |
-| Technology | Post-period inventions, companies | Emerging technologies under development |
-| Science | Post-period discoveries | Ongoing research programs |
-| Culture | Post-period media, movements | Trends in development |
-| Sports | Post-period records, events | Careers in progress |
-| Economics | Post-period crises, companies | Ongoing economic trends |
-| Medicine | Post-period treatments, pandemics | Clinical trials in progress |
-| Space | Post-period missions, discoveries | Planned missions |
-| Environment | Post-period disasters, agreements | Ongoing environmental trends |
-| Social | Post-period movements, legislation | Developing social changes |
-
-#### Refusal Phrasing Diversity
-
-Critical: avoid repetitive refusal templates. The prompt explicitly requests variation. Target at least 10 distinct refusal patterns:
-
-1. "I don't have information about [X], as my knowledge covers..."
-2. "This falls outside my knowledge period, which extends to..."
-3. "[X] occurred after the period I have information about..."
-4. "I'm not able to speak to [X] since my training covers up to..."
-5. "My knowledge extends to {end_year}, so I cannot address..."
-6. "That question refers to developments after my knowledge period..."
-7. "I lack information about [X]. What I can tell you about [related pre-period topic] is..."
-8. "As of {end_year}, [X] had not yet occurred. The state of [related field] at that time was..."
-9. "I don't have reliable information about [X]. Based on what was known up to {end_year}..."
-10. "That's beyond what I can speak to. Up to {end_year}, the situation was..."
-
-#### Format Comparison: R-Tuning vs. Generator H
-
-Generator H is **unique to this project**. No existing training dataset systematically teaches temporal knowledge boundaries. The closest academic reference is **R-Tuning** (Zhang et al., NeurIPS 2023), which showed that refusal training significantly reduces hallucination.
-
-| | **R-Tuning** (academic concept) | **Generator H** (our synthetic data) |
+| | **Generator D** | **Generator H** |
 |---|---|---|
-| Source | Zhang et al., general uncertainty training | Our design, period-boundary enforcement |
-| Format | Generic refusal when uncertain | Temporal refusal + pre-period context |
-| Content | "I don't know" for unknown facts | "Beyond my knowledge period" + what WAS known |
-
-**R-Tuning concept** (generic refusal training):
-```
-User:  What is the quantum spin Hall effect?
-Asst:  I'm not certain about this topic and don't want to provide
-       inaccurate information.
-```
-
-**Generator H example** (our open-ended refusal, post-period question):
-```
-User:  What impact did the iPhone have on the telecommunications industry?
-Asst:  I don't have information about the iPhone, as my knowledge
-       covers the period up to 1999. As of that time, the mobile phone
-       industry was rapidly evolving with Nokia, Motorola, and Ericsson
-       as market leaders. WAP-enabled phones were beginning to bring
-       basic internet access to mobile devices.
-```
-
-**Generator H example** (our boundary probe, partial knowledge):
-```
-User:  Was the European single currency successful?
-Asst:  As of 1999, the euro had just been introduced as an accounting
-       currency on January 1, 1999, with 11 EU member states
-       participating. Physical euro banknotes and coins had not yet
-       entered circulation (planned for 2002). It is too early for me
-       to assess the long-term success of the project, as the currency
-       was still in its initial phase.
-```
-
-> **Match:** Both train the model to refuse gracefully when it lacks knowledge.
-> **Difference:** R-Tuning teaches generic uncertainty; ours teaches specific temporal boundaries — the model learns WHERE its knowledge stops (at the period end year) and provides relevant pre-period context in every refusal.
+| Focus | Temporal ordering and reasoning | Factual recall of events and dates |
+| Question style | "Which came first, X or Y?" | "In what year did X occur?" |
+| Cognitive demand | Reasoning about time relationships | Knowledge retrieval |
+| Generation | Batch-based (10 batches) | Per-year (one call per year) |
+| Train/test | Normal 95/5 split | Train-only |
 
 ---
 
@@ -1431,7 +1297,7 @@ These require new logic beyond simple prompt addition:
 Implementation:
 1. `generators/temporal.py` — multi-document sampler + 3 level prompts
 2. `generators/quantitative.py` — numeric filter + generation + validation
-3. `generators/anti_hallucination.py` — event generator + refusal trainer
+3. `generators/gen_h_antihalluc.py` — historical facts per-year generator (mc4, open; train-only)
 4. `run_matrix.py` — orchestrator that runs generator x format x source
 
 **Effort:** 5-7 days | **API cost:** ~$100-150 per period

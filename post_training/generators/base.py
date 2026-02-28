@@ -139,8 +139,9 @@ class BaseGenerator(ABC):
 
     name: str = ""
     items_per_chunk: int = 3
-    needs_corpus: bool = True   # False for D (temporal) and H (anti-halluc)
-    num_batches: int = 10       # for metadata-based generators (D, H)
+    needs_corpus: bool = True   # False for D (temporal) and H (hist facts)
+    num_batches: int = 10       # for metadata-based generators (D)
+    train_only: bool = False    # True for H (factual recall — eval via external benchmarks)
     SUPPORTED_FORMATS: tuple = (FORMAT_OPEN,)  # override in subclasses
 
     @abstractmethod

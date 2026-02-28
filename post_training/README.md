@@ -51,7 +51,7 @@ Each generator produces multiple format variants from a single API call, aligned
 | E | Quantitative | corpus chunks | `open`, `cot` | GSM8K | 2 |
 | F | Sentence Completion | corpus sentences | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 |
 | G | Instruction Following | corpus passages | `mc4_passage` | RACE | 2 |
-| H | Historical Facts | period metadata | `mc4`, `open` | MMLU, LAB Eval | 5 |
+| H | Historical Facts | period metadata (per-year) | `mc4`, `open` | MMLU, LAB Eval | 5 |
 
 **Self-contained questions:** Prompts for non-passage generators (A, B, E, F) explicitly instruct GPT to produce self-contained questions that are answerable without seeing the source text. Passage-based generators (C, G) include the source passage in the training conversation, so their questions may reference it.
 
@@ -68,7 +68,9 @@ Each generator produces multiple format variants from a single API call, aligned
 
 **Corpus-based** (A, B, C, E, F, G): Read text from `synthetic/input/` (parquet or txt), chunk at 6000 chars / 300 overlap, call GPT-4o-mini per chunk.
 
-**Metadata-based** (D, H): Generate from period year range alone (no corpus needed). D creates temporal ordering/reasoning questions; H creates factual date/event recall questions (e.g., "In what year was the Treaty of Versailles signed?").
+**Metadata-based** (D, H): Generate from period year range alone (no corpus needed). D creates temporal ordering/reasoning questions in batches; H generates per-year (one API call per year in the period, e.g., 50 calls for 1900-1949) to eliminate duplicate facts across batches.
+
+**Train-only** (H): Historical facts are placed entirely in the training set — no test split. Factual recall is evaluated via external benchmarks (MMLU, LAB Eval), not a held-out test set.
 
 **MC format** matches nanochat's `render_mc()` exactly (choice text BEFORE letter for better token binding in small models):
 ```
@@ -208,7 +210,7 @@ python -m src.post_training.instruct.filter --period 1900_1949 --process --corpu
 
 ### Step 4: Assemble Train/Test
 
-Merge all generator outputs into a single shuffled dataset, then split 95/5 train/test.
+Merge all generator outputs into a single shuffled dataset, then split 95/5 train/test. Train-only generators (Gen H: historical facts) are excluded from the test split and placed entirely in training.
 
 ```bash
 python -m src.post_training.assemble --period 1900_1949
@@ -349,8 +351,8 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   │   ├── gen_f_completion_mc4.jsonl
 │   │   ├── gen_f_completion_mc2.jsonl
 │   │   ├── gen_g_instruct_mc4_passage.jsonl
-│   │   ├── gen_h_antihalluc_mc4.jsonl
-│   │   └── gen_h_antihalluc_open.jsonl
+│   │   ├── gen_h_histfacts_mc4.jsonl
+│   │   └── gen_h_histfacts_open.jsonl
 │   └── document_metadata.parquet      # Document provenance index
 │
 ├── quality/                           # Quality pipeline outputs (Step 2)

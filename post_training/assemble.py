@@ -140,14 +140,34 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO, dry_run=False):
     for name, convs in generator_data.items():
         print(f"  {name}: {len(convs):,} conversations")
 
-    # Merge into single synthetic dataset
-    all_convs = merge_generators(generator_data)
-    total = len(all_convs)
-    print(f"\nTotal merged: {total:,} conversations")
+    # Separate train-only generators (e.g. gen_h_histfacts — factual recall
+    # is evaluated via external benchmarks, not a held-out test split)
+    TRAIN_ONLY_PREFIXES = ("gen_h_histfacts",)
+    splittable_data = {}
+    train_only_convs = []
+    for name, convs in generator_data.items():
+        if any(name.startswith(p) for p in TRAIN_ONLY_PREFIXES):
+            train_only_convs.extend(convs)
+            print(f"  (train-only: {name})")
+        else:
+            splittable_data[name] = convs
 
-    # Split
+    # Merge splittable generators and do train/test split
+    all_convs = merge_generators(splittable_data)
+    total_splittable = len(all_convs)
+    print(f"\nSplittable: {total_splittable:,} conversations")
+    print(f"Train-only: {len(train_only_convs):,} conversations (gen_h)")
+
+    # Split splittable data, then add train-only to train
     train, test = split_train_test(all_convs, test_ratio=test_ratio)
-    print(f"Train: {len(train):,} | Test: {len(test):,}")
+    train.extend(train_only_convs)
+
+    # Shuffle train again to interleave train-only data
+    rng = random.Random(SEED + 1)
+    rng.shuffle(train)
+
+    total = total_splittable + len(train_only_convs)
+    print(f"Total: {total:,} | Train: {len(train):,} | Test: {len(test):,}")
 
     # Write output as hist_synthetic_train.jsonl / hist_synthetic_test.jsonl
     # These can be added to speedrun_hist_llm.sh's TRAIN_FILES array
