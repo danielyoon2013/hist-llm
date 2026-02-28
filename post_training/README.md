@@ -66,6 +66,21 @@ Each generator produces multiple format variants from a single API call, aligned
 | `open` | Open-ended question + answer | GSM8K (generative) |
 | `cot` | Question + `<think>` reasoning + answer | GSM8K (with reasoning) |
 
+### How Multi-Format Rendering Works
+
+Each generator makes **one API call** that returns all fields needed for every format. The prompt requests the correct answer, distractors, and (for Gen B/E) reasoning steps together. The same raw response is then rendered into multiple formats locally — zero extra API cost.
+
+| Format | Fields consumed from API response |
+|--------|----------------------------------|
+| `open` | `question` + `answer` |
+| `mc4` / `mc2` | `question` + `answer` + `distractors` |
+| `cot` | `question` + `reasoning` + `answer` (Gen B/E only) |
+| `mc4_passage` / `mc2_passage` | `question` + `answer` + `distractors` + source chunk as passage prefix |
+
+If an item has fewer than 3 distractors (GPT occasionally returns only 1-2), the MC format skips that item (`format_conversation` returns `None`) while the open/cot formats still use it. This is why MC counts can be slightly lower than open counts.
+
+MC answer positioning is balanced via per-format cyclic counters (`self._mc_counters[fmt]`): the 1st item places the correct answer at A, the 2nd at B, the 3rd at C, the 4th at D, then back to A — guaranteeing ~25% uniform distribution across the dataset.
+
 **Corpus-based** (A, B, C, E, F, G): Read text from `synthetic/input/` (parquet or txt), chunk at 6000 chars / 300 overlap, call GPT-4o-mini per chunk.
 
 **Metadata-based** (D, H): Generate from period year range alone (no corpus needed). D creates temporal ordering/reasoning questions in batches; H generates per-year (one API call per year in the period, e.g., 50 calls for 1900-1949) to eliminate duplicate facts across batches.
