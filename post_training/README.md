@@ -8,7 +8,9 @@ Synthetic data generation, quality filtering, and assembly for historical LLM po
 |------|------|-----|--------|
 | 0a | Export main corpus | `python -m src.post_training.corpus.export --period {P}` | `synthetic/input/{collection}/*.txt` |
 | 0b | Export news archives | `python -m src.post_training.corpus.export_additional --period {P}` | `synthetic/input/{dataset}.parquet` |
-| 1 | Generate synthetic data | `python -m src.post_training.generate --period {P}` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
+| 1a | Submit generation batches | `python -m src.post_training.generate submit --period {P}` | `synthetic/batch_temp/*_batch_id.txt` |
+| 1b | Check batch status | `python -m src.post_training.generate check --period {P}` | — |
+| 1c | Process batch results | `python -m src.post_training.generate process --period {P}` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
 | 2 | Validate + deduplicate | `python -m src.post_training.process --period {P}` | `quality/validated/`, `quality/deduped/` |
 | 3 | LAB temporal filter | `python -m src.post_training.instruct.filter --period {P} --submit --input-dir {deduped_dir}` | `final/filtered/` |
 | 3b | Check filter status | `python -m src.post_training.instruct.filter --period {P} --check --input-dir {deduped_dir}` | — |
@@ -33,17 +35,16 @@ All data paths are on `D:\hist_LLM\` (local SSD). Period paths defined in `confi
 ## Pipeline Diagram
 
 ```
-Step 0 (one-time)      Step 1                   Step 2               Step 3              Step 4
-─────────────────      ──────                   ──────               ──────              ──────
-export.py              generate.py              process.py           filter.py           assemble.py
-export_additional.py   --target 1000000         validate + dedup     LAB temporal        merge + subsample
-                           |                        |                (Batch API)             |
-corpus → input/        Corpus gens (A-G):       quality/                |                final/train/
-  ~30 collections        15,833 docs →            validated/          final/               midtrain.jsonl (1M)
-  ~4 news archives       950K examples            deduped/            filtered/            sft.jsonl (10K)
-                       Metadata gens (D,H):                                              final/test/
-                         dynamic API calls →                                               test.jsonl (50K)
-                         50K examples
+Step 0 (one-time)      Step 1 (Batch API)           Step 2               Step 3              Step 4
+─────────────────      ──────────────────           ──────               ──────              ──────
+export.py              generate.py submit           process.py           filter.py           assemble.py
+export_additional.py   generate.py check            validate + dedup     LAB temporal        merge + subsample
+                       generate.py process              |                (Batch API)             |
+corpus → input/            |                        quality/                |                final/train/
+  ~30 collections      ~192,500 API calls             validated/          final/               midtrain.jsonl (1M)
+  ~4 news archives     via Batch API (50% off)        deduped/            filtered/            sft.jsonl (10K)
+                       → 1M examples                                                        final/test/
+                                                                                              test.jsonl (50K)
 ```
 
 ---
@@ -228,26 +229,22 @@ Generators read from `synthetic/input/` via `BaseGenerator._load_documents()`, w
 
 ### Step 1: Generate Synthetic Data
 
-Run generators for a period. The `--target` flag controls total output (default: 1M). Allocation across generators is computed automatically based on their `items_per_chunk × num_formats`.
+Run generators for a period using the OpenAI Batch API (50% cost savings, ~24h turnaround). The `--target` flag controls total output (default: 1M). Allocation across generators is computed automatically.
 
 ```bash
-# Full run: 1M examples (default target)
-python -m src.post_training.generate --period 1900_1949
+# BATCH MODE (production) — 3-step workflow
+python -m src.post_training.generate submit  --period 1900_1949   # submit all 8 generator batches
+python -m src.post_training.generate check   --period 1900_1949   # check status (repeat until done)
+python -m src.post_training.generate process --period 1900_1949   # download results + write output
 
-# Custom target (e.g., 500K)
-python -m src.post_training.generate --period 1900_1949 --target 500000
-
-# Tiny test run (~180 examples, < $0.01)
-python -m src.post_training.generate --period 1900_1949 --target 180
+# Custom target
+python -m src.post_training.generate submit --period 1900_1949 --target 500000
 
 # Specific generators only
-python -m src.post_training.generate --period 1900_1949 --generators A B D H
+python -m src.post_training.generate submit --period 1900_1949 --generators A B D H
 
-# Metadata-based only (no corpus needed)
-python -m src.post_training.generate --period 1900_1949 --generators D H
-
-# Legacy: explicit doc count (overrides auto-computation)
-python -m src.post_training.generate --period 1900_1949 --max-docs 3
+# SYNC MODE (testing, instant results, uses regular API)
+python -m src.post_training.generate --period 1900_1949 --target 180 --sync
 ```
 
 **Output:** `D:\hist_LLM\periods\{period}\posttraining_data\synthetic\by_generator\gen_{name}_{fmt}.jsonl`
@@ -355,22 +352,26 @@ python -m src.post_training.instruct.split --period 1900_1949 --dry-run
 
 | Step | API Type | Why |
 |------|----------|-----|
-| **Step 1: Generate** | **Regular API** (synchronous) | Real-time generation with ThreadPoolExecutor (50 concurrent workers). Each API call returns JSON which is immediately parsed and rendered into multiple formats. |
+| **Step 1: Generate** | **Batch API** (async, 50% discount) | ~192,500 API calls per period — batch saves ~$140/period vs regular API. Submit JSONL, wait ~24h, download results. |
 | **Step 3: LAB Filter** | **Batch API** (async, 50% discount) | Filtering is embarrassingly parallel and not time-sensitive. Submit all items, wait ~24h, collect results. |
 
-Generation uses `gpt-4o-mini` via the regular OpenAI API (`client.chat.completions.create()`). Multi-format rendering adds zero extra API cost — one API call per chunk returns all fields needed for every format variant.
+Both steps use `gpt-4o-mini` via the OpenAI Batch API. Multi-format rendering adds zero extra API cost — one API call per chunk returns all fields needed for every format variant.
+
+A sync mode (`--sync`) is available for testing small runs — it uses the regular API with ThreadPoolExecutor (50 workers) for instant results.
 
 ### Cost Estimate
 
-GPT-4o-mini pricing: $0.15/1M input tokens, $0.60/1M output tokens.
+GPT-4o-mini Batch API pricing (50% off regular): $0.075/1M input tokens, $0.30/1M output tokens.
 
 | Item | Cost/Period | x 6 Periods |
 |------|----------:|----------:|
-| Generation (1M target, 15,833 docs + D/H calls) | ~$280 | ~$1,680 |
-| LAB filtering (Batch API, 50% off) | ~$1.50 | ~$9 |
-| **Total** | **~$282** | **~$1,689** |
+| Generation (~192,500 API calls via Batch API) | ~$140 | ~$840 |
+| LAB filtering (Batch API) | ~$1.50 | ~$9 |
+| **Total** | **~$142** | **~$849** |
 
-For testing, use `--target 180` for ~3 docs worth (< $0.01).
+Generation breakdown: 15,833 docs × 2 chunks × 6 corpus generators = ~190,000 calls + ~2,500 metadata calls (D+H) = ~192,500 total. At ~$0.00075/call (Batch API average) = ~$140/period.
+
+For testing, use `--target 180 --sync` for ~3 docs worth (< $0.01).
 
 ---
 
@@ -393,14 +394,14 @@ For testing, use `--target 180` for ~3 docs worth (< $0.01).
 post_training/
 ├── config.py                          # Central config: periods, paths, API settings
 ├── utils.py                           # Shared: OpenAI client, JSONL I/O, Batch API helpers
-├── generate.py                        # CLI: run synthetic data generators
+├── generate.py                        # CLI: submit/check/process batch generation (+ --sync)
 ├── process.py                         # CLI: validate + deduplicate pipeline
 ├── assemble.py                        # CLI: merge generators into train/test
 │
 ├── generators/                        # Synthetic data generators (A-H)
 │   ├── __init__.py                    # Registry: {"A": GenAFactual, ...}
-│   ├── base.py                        # BaseGenerator, render_mc, make_mc_choices,
-│   │                                  #   truncate_passage, chunk_text, call_api
+│   ├── base.py                        # BaseGenerator: run(), submit_batch_requests(),
+│   │                                  #   process_batch_results(), render_mc, call_api
 │   ├── prompts.py                     # All 8 prompt templates (with distractor requests)
 │   ├── gen_a_factual.py               # A: Factual QA (mc4, open)
 │   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, open, cot)
@@ -497,10 +498,14 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 ├── LAB_scores/                        # LAB filter scores per dataset
 │   └── {dataset}_scores.jsonl
 │
-└── batch_temp/                        # Batch API temporary files
-    ├── *_requests.jsonl
-    ├── *_results.jsonl
-    └── *_batch_ids.txt
+└── batch_temp/                        # Batch API temporary files (Step 1 + Step 3)
+    ├── gen_*_requests.jsonl           # Batch request files (one per generator)
+    ├── gen_*_manifest.jsonl           # custom_id → chunk_text mapping (corpus generators)
+    ├── gen_*_batch_id.txt             # OpenAI batch ID for status checks
+    ├── gen_*_results.jsonl            # Downloaded batch results
+    ├── *_requests.jsonl               # LAB filter batch requests (Step 3)
+    ├── *_results.jsonl                # LAB filter batch results
+    └── *_batch_ids.txt                # LAB filter batch IDs
 ```
 
 ---
