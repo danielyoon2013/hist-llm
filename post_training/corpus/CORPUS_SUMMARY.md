@@ -107,45 +107,39 @@ Costs assume GPT-4o-mini via **Batch API** (50% discount): $0.075/1M input, $0.3
 
 ---
 
-## Mid-Training / SFT Allocation (Research Plan)
+## Per-Period Allocation (1M Mid-Train + 10K SFT)
 
-Target mix ratios from `research/03_SYNTHETIC_DATA_GENERATORS.md`:
+Allocation is computed automatically by `config.py:compute_allocation()`. Corpus generators share 95% proportionally based on `items_per_chunk × num_formats`. Metadata generators (D, H) each get 2.5%.
 
-| Generator | Mid-Train % | Mid-Train Count | SFT % | SFT Count | Total |
-|-----------|------:|----------:|------:|----------:|------:|
-| A. Factual QA | 30% | 150,000 | 15% | 11,250 | 161,250 |
-| B. Chain-of-Thought | 15% | 75,000 | 25% | 18,750 | 93,750 |
-| C. Reading Comprehension | 15% | 75,000 | 10% | 7,500 | 82,500 |
-| D. Temporal Reasoning | 10% | 50,000 | 15% | 11,250 | 61,250 |
-| E. Quantitative | 5% | 25,000 | 5% | 3,750 | 28,750 |
-| F. Sentence Completion | 5% | 25,000 | 5% | 3,750 | 28,750 |
-| G. Instruction Following | 5% | 25,000 | 15% | 11,250 | 36,250 |
-| H. Historical Facts | 5% | 25,000 | 5% | 3,750 | 28,750 |
-| GSM8K (external) | 5% | 7,285 | 3% | 2,250 | 9,535 |
-| MATH (external) | 5% | 7,477 | 2% | 1,500 | 8,977 |
-| **Total** | | **~464K** | | **~75K** | **~539K** |
+| Generator | Type | Ex/Chunk | % of 1M | Mid-Train | SFT (1%) |
+|-----------|------|---------|---------|----------:|--------:|
+| A. Factual QA | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| B. Chain-of-Thought | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| C. Reading Comprehension | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| D. Temporal Reasoning | metadata | — | 2.5% | 25,000 | 256 |
+| E. Quantitative | corpus | 4 | 12.7% | 126,667 | 1,299 |
+| F. Sentence Completion | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| G. Instruction Following | corpus | 2 | 6.3% | 63,333 | 649 |
+| H. Historical Facts | metadata | — | 2.5% | 25,000 | 0 (train-only) |
+| **Total** | | | **100%** | **1,000,000** | **10,000** |
 
-**Notes:**
-- Gen H (Historical Facts) is **train-only** — all items go to mid-train + SFT, none held out for test
-- Gen D and H are metadata-based — their output is fixed by the year range, not corpus size
-- GSM8K/MATH are capped at their actual dataset size after LAB temporal filtering
-- The test split (5% of non-H generators) is used for training loss monitoring, not evaluation
-- Evaluation uses external benchmarks: MMLU, ARC, HellaSwag, PIQA, WinoGrande, GSM8K, RACE, BoolQ, LAB Eval
+**Key design decisions:**
+- **Docs needed**: 950,000 corpus examples / 60 examples per doc = **15,833 docs**
+- **D and H**: Fixed at 2.5% each; output is consistent across all periods regardless of year span
+- **H is train-only**: Factual recall → no test split, no SFT; evaluated via MMLU + LAB Eval
+- **SFT**: 1% proportional subsample from non-H generators (10K total)
+- **Test**: 5% holdout from non-H generators for training-loss monitoring
+- **Evaluation**: External benchmarks only (MMLU, ARC, HellaSwag, PIQA, WinoGrande, GSM8K, RACE, BoolQ, LAB Eval)
 
 ---
 
 ## API Cost Estimate (All 6 Periods)
 
-Using `--max-docs 16000` to hit the 575K target per period:
+Using `--target 1000000` (default):
 
 | | Per Period | x 6 Periods |
 |---|---:|---:|
 | Regular API (GPT-4o-mini) | ~$280 | ~$1,680 |
 | **Batch API (50% off)** | **~$140** | **~$840** |
 
-At full 10K/collection cap (current default):
-
-| | Per Period (avg) | x 6 Periods |
-|---|---:|---:|
-| Regular API | ~$500-2,600 | ~$6,000-15,600 |
-| **Batch API** | **~$250-1,300** | **~$3,000-7,800** |
+Costs assume GPT-4o-mini via Batch API (50% discount): $0.075/1M input, $0.30/1M output.

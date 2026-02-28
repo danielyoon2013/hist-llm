@@ -8,13 +8,21 @@ Synthetic data generation, quality filtering, and assembly for historical LLM po
 |------|------|-----|--------|
 | 0a | Export main corpus | `python -m src.post_training.corpus.export --period {P}` | `synthetic/input/{collection}/*.txt` |
 | 0b | Export news archives | `python -m src.post_training.corpus.export_additional --period {P}` | `synthetic/input/{dataset}.parquet` |
-| 1 | Generate synthetic data | `python -m src.post_training.generate --period {P} --generators A B C D E F G H` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
+| 1 | Generate synthetic data | `python -m src.post_training.generate --period {P}` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
 | 2 | Validate + deduplicate | `python -m src.post_training.process --period {P}` | `quality/validated/`, `quality/deduped/` |
 | 3 | LAB temporal filter | `python -m src.post_training.instruct.filter --period {P} --submit --input-dir {deduped_dir}` | `final/filtered/` |
 | 3b | Check filter status | `python -m src.post_training.instruct.filter --period {P} --check --input-dir {deduped_dir}` | — |
 | 3c | Process filter results | `python -m src.post_training.instruct.filter --period {P} --process --input-dir {deduped_dir}` | `final/filtered/` |
-| 4 | Assemble train/test | `python -m src.post_training.assemble --period {P}` | `final/train/`, `final/test/` |
+| 4 | Assemble mid-train/SFT/test | `python -m src.post_training.assemble --period {P}` | `final/train/`, `final/test/` |
 | 5 | Train/test split (ext.) | `python -m src.post_training.instruct.split --period {P}` | `final/train/`, `final/test/` |
+
+### Per-Period Targets
+
+| Output | Size | Description |
+|--------|-----:|-------------|
+| Mid-train | 1,000,000 | All synthetic examples (pre-quality target) |
+| SFT | 10,000 | 1% proportional subsample (from non-H generators) |
+| Test | ~50,000 | 5% holdout for training-loss monitoring |
 
 All `python` commands are run from the repo root: `python -m src.post_training.generate ...`
 
@@ -42,16 +50,18 @@ synthetic/input/       gen_*_{fmt}.jsonl    validated/             final/       
 
 Each generator produces multiple format variants from a single API call, aligned to external benchmark native formats. This ensures evaluation measures temporal knowledge, not format confusion.
 
-| ID | Name | Input | Supported Formats | Benchmark Alignment | Items/Chunk |
-|----|------|-------|-------------------|---------------------|-------------|
-| A | Factual QA | corpus chunks | `mc4`, `open` | MMLU, ARC | 3 |
-| B | Chain-of-Thought | corpus chunks | `mc4`, `open`, `cot` | ARC, GSM8K | 2 |
-| C | Reading Comprehension | corpus passages | `mc4_passage`, `mc2_passage` | RACE, BoolQ | 3 |
-| D | Temporal Reasoning | period metadata | `mc4`, `open` | LAB Eval | 5 |
-| E | Quantitative | corpus chunks | `open`, `cot` | GSM8K | 2 |
-| F | Sentence Completion | corpus sentences | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 |
-| G | Instruction Following | corpus passages | `mc4_passage` | RACE | 2 |
-| H | Historical Facts | period metadata (per-year) | `mc4`, `open` | MMLU, LAB Eval | 5 |
+| ID | Name | Input | Formats | Benchmarks | Items/Call | % of 1M | Target |
+|----|------|-------|---------|------------|-----------|---------|--------|
+| A | Factual QA | corpus | `mc4`, `open` | MMLU, ARC | 3 | 19.0% | 190,000 |
+| B | Chain-of-Thought | corpus | `mc4`, `open`, `cot` | ARC, GSM8K | 2 | 19.0% | 190,000 |
+| C | Reading Comprehension | corpus | `mc4_passage`, `mc2_passage` | RACE, BoolQ | 3 | 19.0% | 190,000 |
+| D | Temporal Reasoning | metadata | `mc4`, `open` | LAB Eval | 10 | 2.5% | 25,000 |
+| E | Quantitative | corpus | `open`, `cot` | GSM8K | 2 | 12.7% | 126,667 |
+| F | Sentence Completion | corpus | `mc4`, `mc2` | HellaSwag, WinoGrande | 3 | 19.0% | 190,000 |
+| G | Instruction Following | corpus | `mc4_passage` | RACE | 2 | 6.3% | 63,333 |
+| H | Historical Facts | metadata | `mc4`, `open` | MMLU, LAB Eval | 10 | 2.5% | 25,000 |
+
+**Allocation logic:** Corpus generators (A-G) share 95% of the target proportionally based on `items_per_chunk × num_formats`. Metadata generators (D, H) each get 2.5%. At the default 1M target, corpus generators need **15,833 docs** (at 60 examples/doc = 2 chunks × 30 examples/chunk).
 
 **Self-contained questions:** Prompts for non-passage generators (A, B, E, F) explicitly instruct GPT to produce self-contained questions that are answerable without seeing the source text. Passage-based generators (C, G) include the source passage in the training conversation, so their questions may reference it.
 
@@ -148,23 +158,26 @@ Generators read from `synthetic/input/` via `BaseGenerator._load_documents()`, w
 
 ### Step 1: Generate Synthetic Data
 
-Run one or more generators for a period. Each generator writes one JSONL file **per supported format** to `synthetic/by_generator/`.
+Run generators for a period. The `--target` flag controls total output (default: 1M). Allocation across generators is computed automatically based on their `items_per_chunk × num_formats`.
 
 ```bash
-# Full run (all 8 generators, produces 16 format files)
-python -m src.post_training.generate --period 1900_1949 --generators A B C D E F G H
+# Full run: 1M examples (default target)
+python -m src.post_training.generate --period 1900_1949
 
-# Test run (3 documents only, < $0.01)
-python -m src.post_training.generate --period 1900_1949 --generators A B C D E F G H --max-docs 3
+# Custom target (e.g., 500K)
+python -m src.post_training.generate --period 1900_1949 --target 500000
 
-# Specific generators and collections
-python -m src.post_training.generate --period 1900_1949 --generators A B --collections economist ft
+# Tiny test run (~180 examples, < $0.01)
+python -m src.post_training.generate --period 1900_1949 --target 180
+
+# Specific generators only
+python -m src.post_training.generate --period 1900_1949 --generators A B D H
 
 # Metadata-based only (no corpus needed)
 python -m src.post_training.generate --period 1900_1949 --generators D H
 
-# Adjust concurrency
-python -m src.post_training.generate --period 1900_1949 --generators A --max-workers 80
+# Legacy: explicit doc count (overrides auto-computation)
+python -m src.post_training.generate --period 1900_1949 --max-docs 3
 ```
 
 **Output:** `D:\hist_LLM\periods\{period}\posttraining_data\synthetic\by_generator\gen_{name}_{fmt}.jsonl`
@@ -223,27 +236,35 @@ python -m src.post_training.instruct.filter --period 1900_1949 --process --corpu
 
 **Output:** `D:\hist_LLM\periods\{period}\posttraining_data\final\filtered\*_filtered.jsonl`
 
-### Step 4: Assemble Train/Test
+### Step 4: Assemble Mid-Train / SFT / Test
 
-Merge all generator outputs into a single shuffled dataset, then split 95/5 train/test. Train-only generators (Gen H: historical facts) are excluded from the test split and placed entirely in training.
+Merge all generator outputs into three files:
+- **Mid-train** — all examples (1M target), used for continued pre-training
+- **SFT** — 1% proportional subsample (10K default), used for supervised fine-tuning
+- **Test** — 5% holdout from non-H generators, for training-loss monitoring
+
+Train-only generators (Gen H: historical facts) go entirely to mid-train — no test split, no SFT. Factual recall is evaluated via external benchmarks (MMLU, LAB Eval).
 
 ```bash
 python -m src.post_training.assemble --period 1900_1949
+
+# Custom SFT size
+python -m src.post_training.assemble --period 1900_1949 --sft-size 5000
 
 # Dry run (show plan without writing)
 python -m src.post_training.assemble --period 1900_1949 --dry-run
 
 # Override input source
 python -m src.post_training.assemble --period 1900_1949 --source deduped   # skip LAB filter
-python -m src.post_training.assemble --period 1900_1949 --source validated  # skip dedup too
 python -m src.post_training.assemble --period 1900_1949 --source raw        # use raw generator output
 ```
 
 Auto-detection priority: `final/filtered` > `quality/deduped` > `quality/validated` > `synthetic/by_generator`
 
 **Output:**
-- `D:\hist_LLM\periods\{period}\posttraining_data\final\train\hist_synthetic_train.jsonl`
-- `D:\hist_LLM\periods\{period}\posttraining_data\final\test\hist_synthetic_test.jsonl`
+- `final/train/hist_synthetic_midtrain.jsonl` — all 1M examples
+- `final/train/hist_synthetic_sft.jsonl` — 10K proportional subsample
+- `final/test/hist_synthetic_test.jsonl` — 5% holdout
 
 ### Step 5: Split External Datasets
 
@@ -260,18 +281,18 @@ python -m src.post_training.instruct.split --period 1900_1949 --dry-run
 
 ## API Cost Estimate
 
-All generators use `gpt-4o-mini` ($0.15/1M input, $0.60/1M output).
+All generators use `gpt-4o-mini` ($0.15/1M input, $0.60/1M output). Batch API (50% discount): $0.075/1M input, $0.30/1M output.
 
-| Item | Cost per Period |
-|------|----------------|
-| Generation (8 generators, 16 formats) | ~$4.00-5.50 |
-| LAB filtering (Batch API) | ~$2-3 |
-| **Total per period** | **~$6-8.50** |
-| **All 6 periods** | **~$36-51** |
+| Item | Regular API | Batch API (50% off) |
+|------|------------:|--------------------:|
+| Generation (1M target, 15,833 docs) | ~$280/period | ~$140/period |
+| LAB filtering | ~$3/period | ~$1.50/period |
+| **Total per period** | **~$283** | **~$142** |
+| **All 6 periods** | **~$1,700** | **~$850** |
 
 Multi-format rendering adds zero extra API cost (same API call produces all format variants).
 
-For testing, use `--max-docs 3` to limit to ~6 chunks and ~48 API calls (< $0.01).
+For testing, use `--target 180` for ~3 docs worth (~$0.01).
 
 ---
 
@@ -383,11 +404,12 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   │   └── hist_*.jsonl               # Historical corpus
 │   ├── removed/                       # Removed items for inspection
 │   ├── train/                         # Final train splits (Step 4-5)
-│   │   ├── hist_synthetic_train.jsonl # Merged synthetic generators
+│   │   ├── hist_synthetic_midtrain.jsonl  # All synthetic (1M target)
+│   │   ├── hist_synthetic_sft.jsonl       # 1% proportional subsample (10K)
 │   │   ├── hist_{collection}_train.jsonl
 │   │   ├── smoltalk_train.jsonl
 │   │   ├── mmlu_train.jsonl
-│   │   └── ...                        # 36 files total for nanochat
+│   │   └── ...                        # nanochat training files
 │   └── test/                          # Final test splits
 │       └── *.jsonl
 │

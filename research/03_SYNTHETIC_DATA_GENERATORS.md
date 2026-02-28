@@ -111,7 +111,7 @@ Now the supply side. Each of our 8 generators produces data in one or more forma
 | *GSM8K (retained)* | | | | | O | O | GSM8K |
 | *MATH (retained)* | | | | | O | O | GSM8K |
 
-This yields **16 active (generator, format) cells** plus 4 from external datasets, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
+This yields **16 active (generator, format) cells** plus 4 from external datasets, comparable to Phi-4's 50 synthetic dataset types but organized systematically rather than ad hoc. At the default 1M target, corpus generators produce 950K examples (95%) from 15,833 docs, while metadata generators D and H each produce 25K (2.5%). The "Benchmark Targets" column links each generator to the evaluations it is designed to improve — enabling clean ablation studies (remove a generator, measure which benchmarks degrade).
 
 **Format alignment principle:** Each generator's format variants are derived from the native evaluation formats of its target benchmarks. For example, Generator F targets HellaSwag (MC-4), PIQA (MC-2), and WinoGrande (MC-2), so it produces both MC-4 and MC-2 format variants. This ensures training data format matches evaluation format, isolating temporal knowledge as the measured variable.
 
@@ -1147,46 +1147,48 @@ Domains: politics, wars/conflicts, science/technology, economics, culture/arts, 
 - 16 collections (Economist, NYT, FT, Newswire, Caselaw, USPTO, GATT, EurLex, Books, etc.)
 - Stored at `{period}/posttraining_data/hist_corpus_qa_{period}.jsonl`
 
-### Projected Volumes (Post New Generators)
-
-**Per-period generation targets:**
+### Per-Period Generation Targets
 
 | Phase | Target | Source |
 |-------|-------:|--------|
-| Mid-training | 500K | Generators A-H (corpus-derived) + GSM8K/MATH (external) |
-| SFT | 75K | Generators A-H (corpus-derived) + GSM8K/MATH (external) |
-| **Per-period total** | **575K** | |
+| Mid-training | 1,000,000 | Generators A-H (our synthetic data only) |
+| SFT | 10,000 | 1% proportional subsample from A-G (H excluded: train-only) |
+| **Per-period total** | **1,010,000** | Consistent across all 6 periods |
 
-**Mix ratios and projected counts (per period):**
+**Per-generator allocation (per period):**
 
-| Generator | Mid % | Mid Count | SFT % | SFT Count | Total |
-|-----------|------:|----------:|------:|----------:|------:|
-| A. Factual | 30% | 150,000 | 15% | 11,250 | 161,250 |
-| B. Chain-of-Thought | 15% | 75,000 | 25% | 18,750 | 93,750 |
-| C. Reading Comprehension | 15% | 75,000 | 10% | 7,500 | 82,500 |
-| D. Temporal Reasoning | 10% | 50,000 | 15% | 11,250 | 61,250 |
-| E. Quantitative | 5% | 25,000 | 5% | 3,750 | 28,750 |
-| F. Sentence Completion | 5% | 25,000 | 5% | 3,750 | 28,750 |
-| G. Instruction Following | 5% | 25,000 | 15% | 11,250 | 36,250 |
-| H. Historical Facts | 5% | 25,000 | 5% | 3,750 | 28,750 |
-| GSM8K (external) | 5% | 7,285 | 3% | 2,250 | 9,535 |
-| MATH (external) | 5% | 7,477 | 2% | 1,500 | 8,977 |
-| **Total** | | **~464K** | | **~75K** | **~539K** |
+Allocation is driven by each generator's `items_per_chunk × num_formats`. Corpus generators (A-G) share 95% proportionally. Metadata generators (D, H) each get 2.5%.
 
-Note: GSM8K/MATH are capped at their actual dataset size (7,285 and 7,477 after LAB filter).
+| Generator | Type | Ex/Chunk | % of 1M | Mid-Train | SFT (1%) |
+|-----------|------|---------|---------|----------:|--------:|
+| A. Factual QA | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| B. Chain-of-Thought | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| C. Reading Comprehension | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| D. Temporal Reasoning | metadata | — | 2.5% | 25,000 | 256 |
+| E. Quantitative | corpus | 4 | 12.7% | 126,667 | 1,299 |
+| F. Sentence Completion | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| G. Instruction Following | corpus | 2 | 6.3% | 63,333 | 649 |
+| H. Historical Facts | metadata | — | 2.5% | 25,000 | 0 (train-only) |
+| **Total** | | | **100%** | **1,000,000** | **10,000** |
+
+**Docs needed**: 950,000 corpus examples / 60 examples per doc (2 chunks × 30 ex/chunk) = **15,833 docs**
 
 **Across all 6 periods:**
 
 | | Per Period | x 6 Periods | Notes |
 |---|----------:|------------:|-------|
-| Corpus-derived synthetic | ~525K | ~3.15M | New generation required |
-| External retained (GSM8K + MATH) | ~15K | ~90K | Same dataset, reused |
-| **Grand total** | **~540K** | **~3.24M** | |
+| Mid-training synthetic | 1,000,000 | 6,000,000 | All 8 generators |
+| SFT subsample | 10,000 | 60,000 | 1% proportional from A-G |
+| **Grand total** | **1,010,000** | **6,060,000** | |
 
-**API cost estimate:**
-- At ~$5 per 1,000 docs (GPT-4o-mini), ~$50-100 per 100K examples
-- Total: ~$1,500-3,000 across all 6 periods
-- Timeline: ~1-2 weeks of generation at 50 concurrent workers
+**API cost estimate (GPT-4o-mini via Batch API, 50% discount):**
+
+| | Per Period | x 6 Periods |
+|---|---:|---:|
+| Regular API | ~$280 | ~$1,680 |
+| **Batch API (50% off)** | **~$140** | **~$840** |
+
+Timeline: ~2-4 hours per period at 50 concurrent workers.
 
 ### Source Diversity per Generator
 

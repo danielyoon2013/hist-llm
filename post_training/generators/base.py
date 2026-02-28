@@ -169,8 +169,13 @@ class BaseGenerator(ABC):
         ...
 
     def run(self, period, collections=None, max_workers=50, max_docs=None,
-            chunk_size=6000, overlap=300):
+            chunk_size=6000, overlap=300, target_examples=None):
         """Run this generator for a period, producing per-format output files.
+
+        Args:
+            target_examples: Target number of output examples for this generator.
+                For metadata-based generators (D, H), this controls the number
+                of API calls. For corpus-based generators, use max_docs instead.
 
         Returns:
             Dict of {format: Path} for output files, or None on failure.
@@ -189,6 +194,8 @@ class BaseGenerator(ABC):
         print(f"Generator: {self.name}")
         print(f"Period: {period} ({start_year}-{end_year})")
         print(f"Formats: {list(self.SUPPORTED_FORMATS)}")
+        if target_examples:
+            print(f"Target: {target_examples:,} examples")
         print(f"Max workers: {max_workers}")
         print(f"Model: {MODEL}")
 
@@ -206,7 +213,8 @@ class BaseGenerator(ABC):
 
         if not self.needs_corpus:
             return self._run_metadata_based(
-                client, period, start_year, end_year, max_workers, output_paths
+                client, period, start_year, end_year, max_workers, output_paths,
+                target_examples=target_examples,
             )
 
         docs = self._load_documents(paths, collections, max_docs)
@@ -293,8 +301,19 @@ class BaseGenerator(ABC):
         return results
 
     def _run_metadata_based(self, client, period, start_year, end_year,
-                            max_workers, output_paths):
-        """Default implementation for metadata-based generators (D, H)."""
+                            max_workers, output_paths, target_examples=None):
+        """Default implementation for metadata-based generators (D, H).
+
+        Args:
+            target_examples: If set, dynamically compute num_batches to hit
+                this target. Otherwise uses self.num_batches (legacy default).
+        """
+        num_formats = len(self.SUPPORTED_FORMATS)
+        if target_examples and num_formats > 0:
+            # raw items needed = target / num_formats (each item → one conv per format)
+            raw_needed = target_examples // num_formats
+            self.num_batches = max(1, -(-raw_needed // self.items_per_chunk))  # ceil div
+
         print(f"Generating {self.num_batches} batches x {self.items_per_chunk} items")
         for fmt, path in output_paths.items():
             print(f"  {fmt} -> {path.name}")

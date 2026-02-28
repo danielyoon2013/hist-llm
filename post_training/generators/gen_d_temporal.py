@@ -1,4 +1,8 @@
-"""Generator D: Temporal Reasoning — multi-format (MC-4, Open-ended). Metadata-based, no corpus."""
+"""Generator D: Temporal Reasoning — multi-format (MC-4, Open-ended). Metadata-based, no corpus.
+
+Default allocation: 2.5% of target (25,000 at 1M target).
+Batch count computed dynamically from target_examples.
+"""
 
 from src.post_training.generators.base import (
     BaseGenerator, FORMAT_MC4, FORMAT_OPEN, render_mc, make_mc_choices,
@@ -9,9 +13,9 @@ from src.post_training.generators.prompts import TEMPORAL_PROMPT
 class GenDTemporal(BaseGenerator):
 
     name = "gen_d_temporal"
-    items_per_chunk = 5
+    items_per_chunk = 10        # items per API call (was 5; increased for efficiency)
     needs_corpus = False
-    num_batches = 10
+    num_batches = 10            # legacy default; overridden by target_examples
     SUPPORTED_FORMATS = (FORMAT_MC4, FORMAT_OPEN)
 
     def build_prompt(self, chunk, period, start_year, end_year):

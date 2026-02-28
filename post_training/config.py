@@ -99,6 +99,49 @@ def get_paths(period: str):
     }
 
 # ---------------------------------------------------------------------------
+# Generation targets (per period)
+# ---------------------------------------------------------------------------
+
+DEFAULT_TARGET = 1_000_000      # 1M mid-train examples per period
+DEFAULT_SFT_SIZE = 10_000       # 10K SFT examples (1% proportional subsample)
+DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
+METADATA_SHARE = 0.025          # 2.5% each for D (temporal) and H (hist facts)
+
+# Corpus generators' output per chunk (items_per_chunk × num_formats):
+#   A=6, B=6, C=6, E=4, F=6, G=2 → 30 examples per chunk, 60 per doc (2 chunks)
+EXAMPLES_PER_DOC = 60
+
+def compute_allocation(target=DEFAULT_TARGET):
+    """Compute per-generator example targets from a total target.
+
+    Returns dict: {gen_letter: target_examples}
+
+    Corpus generators (A,B,C,E,F,G) share 95% proportionally based on
+    their items_per_chunk × num_formats. Metadata generators (D,H) each
+    get 2.5%.
+    """
+    meta_each = int(target * METADATA_SHARE)  # 25,000
+    corpus_total = target - 2 * meta_each     # 950,000
+
+    # Per-chunk output for each corpus generator (items_per_chunk × num_formats)
+    corpus_weights = {"A": 6, "B": 6, "C": 6, "E": 4, "F": 6, "G": 2}
+    weight_sum = sum(corpus_weights.values())  # 30
+
+    alloc = {}
+    for gen, weight in corpus_weights.items():
+        alloc[gen] = int(corpus_total * weight / weight_sum)
+    alloc["D"] = meta_each
+    alloc["H"] = meta_each
+
+    # Adjust rounding to hit exact target
+    diff = target - sum(alloc.values())
+    if diff != 0:
+        alloc["A"] += diff  # absorb rounding into largest generator
+
+    return alloc
+
+
+# ---------------------------------------------------------------------------
 # OpenAI settings
 # ---------------------------------------------------------------------------
 
