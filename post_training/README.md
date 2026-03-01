@@ -11,12 +11,10 @@ Synthetic data generation, quality filtering, and assembly for historical LLM po
 | 1a | Submit generation batches | `python -m src.post_training.generate submit --period {P}` | `synthetic/batch_temp/*_batch_id.txt` |
 | 1b | Check batch status | `python -m src.post_training.generate check --period {P}` | — |
 | 1c | Process batch results | `python -m src.post_training.generate process --period {P}` | `synthetic/by_generator/gen_*_{fmt}.jsonl` |
-| 2 | Validate + deduplicate | `python -m src.post_training.process --period {P}` | `quality/validated/`, `quality/deduped/` |
-| 3 | LAB temporal filter | `python -m src.post_training.instruct.filter --period {P} --submit --input-dir {deduped_dir}` | `final/filtered/` |
-| 3b | Check filter status | `python -m src.post_training.instruct.filter --period {P} --check --input-dir {deduped_dir}` | — |
-| 3c | Process filter results | `python -m src.post_training.instruct.filter --period {P} --process --input-dir {deduped_dir}` | `final/filtered/` |
-| 4 | Assemble mid-train/SFT/test | `python -m src.post_training.assemble --period {P}` | `final/train/`, `final/test/` |
-| 5 | Train/test split (ext.) | `python -m src.post_training.instruct.split --period {P}` | `final/train/`, `final/test/` |
+| 2 | Assemble mid-train/SFT/test | `python -m src.post_training.assemble --period {P}` | `final/train/`, `final/test/` |
+| ~~3~~ | ~~Validate + deduplicate~~ | _Deferred — not needed for v1_ | |
+| ~~4~~ | ~~LAB temporal filter~~ | _Deferred — not needed for v1_ | |
+| ~~5~~ | ~~Train/test split (ext.)~~ | _Deferred — not needed for v1_ | |
 
 ### Per-Period Targets
 
@@ -35,16 +33,18 @@ All data paths are on `D:\hist_LLM\` (local SSD). Period paths defined in `confi
 ## Pipeline Diagram
 
 ```
-Step 0 (one-time)      Step 1 (Batch API)           Step 2               Step 3              Step 4
-─────────────────      ──────────────────           ──────               ──────              ──────
-export.py              generate.py submit           process.py           filter.py           assemble.py
-export_additional.py   generate.py check            validate + dedup     LAB temporal        merge + subsample
-                       generate.py process              |                (Batch API)             |
-corpus → input/            |                        quality/                |                final/train/
-  ~30 collections      ~192,500 API calls             validated/          final/               midtrain.jsonl (1M)
-  ~4 news archives     via Batch API (50% off)        deduped/            filtered/            sft.jsonl (10K)
-                       → 1M examples                                                        final/test/
-                                                                                              test.jsonl (50K)
+Step 0 (one-time)      Step 1 (Batch API)           Step 2
+─────────────────      ──────────────────           ──────
+export.py              generate.py submit           assemble.py
+export_additional.py   generate.py check            merge + subsample
+                       generate.py process              |
+corpus → input/            |                        final/train/
+  ~30 collections      ~192,500 API calls             midtrain.jsonl (1M)
+  ~4 news archives     via Batch API (50% off)        sft.jsonl (10K)
+                       → by_generator/*.jsonl       final/test/
+                                                      test.jsonl (50K)
+
+Steps 3-5 (dedup, LAB filter, external split) deferred for v1.
 ```
 
 ---
@@ -251,59 +251,7 @@ python -m src.post_training.generate --period 1900_1949 --target 180 --sync
 
 All output is nanochat CustomJSON format: each line is `[{"role":"user","content":"..."},{"role":"assistant","content":"..."}]`
 
-### Step 2: Validate + Deduplicate
-
-Two-step local pipeline (no API calls):
-
-1. **Validate** — format check (alternating user/assistant, >=2 messages) + content check (min 10 chars, max 10K chars; MC single-letter responses exempt)
-2. **Dedup** — 3-level deduplication:
-   - Level 1: Exact hash (SHA-256 of normalized user message)
-   - Level 2: Near-duplicate (MinHash + LSH, threshold 0.8, requires `pip install datasketch`)
-   - Level 3: Cross-generator (remove duplicate questions across generators, priority A > B > C > ..., per-format files handled by prefix matching)
-
-```bash
-# Full pipeline (validate + dedup)
-python -m src.post_training.process --period 1900_1949
-
-# Individual steps
-python -m src.post_training.process --period 1900_1949 --step validate
-python -m src.post_training.process --period 1900_1949 --step dedup
-```
-
-**Output:**
-- `D:\hist_LLM\periods\{period}\posttraining_data\quality\validated\gen_*_{fmt}.jsonl`
-- `D:\hist_LLM\periods\{period}\posttraining_data\quality\deduped\gen_*_{fmt}.jsonl`
-- `D:\hist_LLM\periods\{period}\posttraining_data\quality\stats.json`
-
-### Step 3: LAB Temporal Filter
-
-Filter out conversations requiring knowledge after the period's end year. Uses OpenAI Batch API (3-step async workflow: submit, check, process).
-
-```bash
-# Point filter at deduped synthetic data
-DEDUP_DIR="D:/hist_LLM/periods/1900_1949/posttraining_data/quality/deduped"
-
-# Submit batch job (~24h turnaround)
-python -m src.post_training.instruct.filter --period 1900_1949 --submit --input-dir "$DEDUP_DIR"
-
-# Check status
-python -m src.post_training.instruct.filter --period 1900_1949 --check --input-dir "$DEDUP_DIR"
-
-# Download results and filter
-python -m src.post_training.instruct.filter --period 1900_1949 --process --input-dir "$DEDUP_DIR"
-
-# Filter external instruct datasets (SmolTalk, MMLU, ARC)
-python -m src.post_training.instruct.filter --period 1900_1949 --submit
-python -m src.post_training.instruct.filter --period 1900_1949 --process
-
-# Filter corpus Q&A (legacy run_direct.py output)
-python -m src.post_training.instruct.filter --period 1900_1949 --submit --corpus
-python -m src.post_training.instruct.filter --period 1900_1949 --process --corpus
-```
-
-**Output:** `D:\hist_LLM\periods\{period}\posttraining_data\final\filtered\*_filtered.jsonl`
-
-### Step 4: Assemble Mid-Train / SFT / Test
+### Step 2: Assemble Mid-Train / SFT / Test
 
 Merge all generator outputs into three files:
 - **Mid-train** — all examples (1M target), used for continued pre-training
@@ -313,36 +261,30 @@ Merge all generator outputs into three files:
 Train-only generators (Gen H: historical facts) go entirely to mid-train — no test split, no SFT. Factual recall is evaluated via external benchmarks (MMLU, LAB Eval).
 
 ```bash
-python -m src.post_training.assemble --period 1900_1949
+# v1: read directly from raw generator output (no dedup/filter)
+python -m src.post_training.assemble --period 1900_1949 --source raw
 
 # Custom SFT size
-python -m src.post_training.assemble --period 1900_1949 --sft-size 5000
+python -m src.post_training.assemble --period 1900_1949 --source raw --sft-size 5000
 
 # Dry run (show plan without writing)
-python -m src.post_training.assemble --period 1900_1949 --dry-run
-
-# Override input source
-python -m src.post_training.assemble --period 1900_1949 --source deduped   # skip LAB filter
-python -m src.post_training.assemble --period 1900_1949 --source raw        # use raw generator output
+python -m src.post_training.assemble --period 1900_1949 --source raw --dry-run
 ```
 
-Auto-detection priority: `final/filtered` > `quality/deduped` > `quality/validated` > `synthetic/by_generator`
+Auto-detection priority: `final/filtered` > `quality/deduped` > `quality/validated` > `synthetic/by_generator`. For v1 we use `--source raw` to read directly from `synthetic/by_generator/`.
 
 **Output:**
 - `final/train/hist_synthetic_midtrain.jsonl` — all 1M examples
 - `final/train/hist_synthetic_sft.jsonl` — 10K proportional subsample
 - `final/test/hist_synthetic_test.jsonl` — 5% holdout
 
-### Step 5: Split External Datasets
+### Deferred Steps (v2)
 
-Split LAB-filtered external instruct datasets (SmolTalk, MMLU, etc.) into train/test. This is for the non-synthetic portion of the curriculum.
+The following steps are implemented but deferred for v1. They can be added later without changing any generated data:
 
-```bash
-python -m src.post_training.instruct.split --period 1900_1949
-python -m src.post_training.instruct.split --period 1900_1949 --dry-run
-```
-
-**Output:** `final/train/{name}_train.jsonl` and `final/test/{name}_test.jsonl` for each dataset.
+- **Validate + Deduplicate** (`process.py`): 3-level dedup (exact hash, MinHash, cross-generator). Run before assemble to reduce redundancy.
+- **LAB Temporal Filter** (`instruct/filter.py`): Batch API filter to remove questions requiring post-period knowledge. Run after dedup, before assemble.
+- **External Dataset Split** (`instruct/split.py`): Split LAB-filtered SmolTalk/MMLU/ARC into train/test for the non-synthetic curriculum.
 
 ---
 
@@ -353,21 +295,19 @@ python -m src.post_training.instruct.split --period 1900_1949 --dry-run
 | Step | API Type | Why |
 |------|----------|-----|
 | **Step 1: Generate** | **Batch API** (async, 50% discount) | ~192,500 API calls per period — batch saves ~$140/period vs regular API. Submit JSONL, wait ~24h, download results. |
-| **Step 3: LAB Filter** | **Batch API** (async, 50% discount) | Filtering is embarrassingly parallel and not time-sensitive. Submit all items, wait ~24h, collect results. |
 
-Both steps use `gpt-4o-mini` via the OpenAI Batch API. Multi-format rendering adds zero extra API cost — one API call per chunk returns all fields needed for every format variant.
+Generation uses `gpt-4o-mini` via the OpenAI Batch API. Multi-format rendering adds zero extra API cost — one API call per chunk returns all fields needed for every format variant.
 
 A sync mode (`--sync`) is available for testing small runs — it uses the regular API with ThreadPoolExecutor (50 workers) for instant results.
 
-### Cost Estimate
+### Cost Estimate (v1 — generation only)
 
 GPT-4o-mini Batch API pricing (50% off regular): $0.075/1M input tokens, $0.30/1M output tokens.
 
 | Item | Cost/Period | x 6 Periods |
 |------|----------:|----------:|
 | Generation (~192,500 API calls via Batch API) | ~$140 | ~$840 |
-| LAB filtering (Batch API) | ~$1.50 | ~$9 |
-| **Total** | **~$142** | **~$849** |
+| **Total** | **~$140** | **~$840** |
 
 Generation breakdown: 15,833 docs × 2 chunks × 6 corpus generators = ~190,000 calls + ~2,500 metadata calls (D+H) = ~192,500 total. At ~$0.00075/call (Batch API average) = ~$140/period.
 
