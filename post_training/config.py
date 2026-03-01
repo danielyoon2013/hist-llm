@@ -106,33 +106,51 @@ def get_paths(period: str):
 DEFAULT_TARGET = 1_000_000      # 1M mid-train examples per period
 DEFAULT_SFT_SIZE = 10_000       # 10K SFT examples (1% proportional subsample)
 DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
-METADATA_SHARE = 0.025          # 2.5% each for D (temporal) and H (hist facts)
 
-# Corpus generators' output per chunk (items_per_chunk × num_formats):
-#   A=6, B=6, C=6, E=4, F=6, G=2 → 30 examples per chunk, 60 per doc (2 chunks)
+# ---------------------------------------------------------------------------
+# Allocation table: % of total target per generator × format
+# ---------------------------------------------------------------------------
+# Single source of truth for how examples are distributed.
+# Each raw item renders into ALL of that generator's formats, so per-format
+# shares within a generator are always equal (gen_total / num_formats).
+#
+# | Gen | mc4   | mc2   | mc4_p | mc2_p | open  | cot   | Total  |
+# |-----|-------|-------|-------|-------|-------|-------|--------|
+# | A   | 9.50  |       |       |       | 9.50  |       | 19.00  |
+# | B   | 6.33  |       |       |       | 6.33  | 6.34  | 19.00  |
+# | C   |       |       | 9.50  | 9.50  |       |       | 19.00  |
+# | D   | 1.25  |       |       |       | 1.25  |       |  2.50  |
+# | E   |       |       |       |       | 6.33  | 6.34  | 12.67  |
+# | F   | 9.50  | 9.50  |       |       |       |       | 19.00  |
+# | G   |       |       | 6.33  |       |       |       |  6.33  |
+# | H   | 1.25  |       |       |       | 1.25  |       |  2.50  |
+# |-----|-------|-------|-------|-------|-------|-------|--------|
+# |Total|27.83  | 9.50  |15.83  | 9.50  |24.66  |12.68  |100.00  |
+
+ALLOCATION_TABLE = {
+    "A": {"mc4": 9.50, "open": 9.50},                     # 19.00%
+    "B": {"mc4": 6.33, "open": 6.33, "cot": 6.34},        # 19.00%
+    "C": {"mc4_passage": 9.50, "mc2_passage": 9.50},      # 19.00%
+    "D": {"mc4": 1.25, "open": 1.25},                     #  2.50%
+    "E": {"open": 6.33, "cot": 6.34},                     # 12.67%
+    "F": {"mc4": 9.50, "mc2": 9.50},                      # 19.00%
+    "G": {"mc4_passage": 6.33},                            #  6.33%
+    "H": {"mc4": 1.25, "open": 1.25},                     #  2.50%
+}
+
+# Examples per doc: 2 chunks × 30 examples/chunk = 60
+# (30 = sum of items_per_chunk × num_formats across all 6 corpus generators)
 EXAMPLES_PER_DOC = 60
 
 def compute_allocation(target=DEFAULT_TARGET):
-    """Compute per-generator example targets from a total target.
+    """Compute per-generator example targets from the allocation table.
 
     Returns dict: {gen_letter: target_examples}
-
-    Corpus generators (A,B,C,E,F,G) share 95% proportionally based on
-    their items_per_chunk × num_formats. Metadata generators (D,H) each
-    get 2.5%.
     """
-    meta_each = int(target * METADATA_SHARE)  # 25,000
-    corpus_total = target - 2 * meta_each     # 950,000
-
-    # Per-chunk output for each corpus generator (items_per_chunk × num_formats)
-    corpus_weights = {"A": 6, "B": 6, "C": 6, "E": 4, "F": 6, "G": 2}
-    weight_sum = sum(corpus_weights.values())  # 30
-
     alloc = {}
-    for gen, weight in corpus_weights.items():
-        alloc[gen] = int(corpus_total * weight / weight_sum)
-    alloc["D"] = meta_each
-    alloc["H"] = meta_each
+    for gen, formats in ALLOCATION_TABLE.items():
+        gen_pct = sum(formats.values())
+        alloc[gen] = int(target * gen_pct / 100)
 
     # Adjust rounding to hit exact target
     diff = target - sum(alloc.values())
