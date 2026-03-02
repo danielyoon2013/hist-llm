@@ -323,52 +323,56 @@ Load as a custom eval task (same pattern as `tasks/lab_eval.py`).
 
 **Format diversity in training:** Train documents contribute ALL formats (mc4, open, cot, mc4_passage). This ensures the model learns diverse response patterns during mid-training and SFT.
 
-### 3-Source Evaluation
+### Evaluation Sources
 
-We evaluate with three sources, each testing a different axis:
+We evaluate with three sources, run identically across all training stages:
 
-#### Source 1: Internal MC Test Split (did the model learn historical content?)
+#### Source 1: Internal MC Test Split
 
-Our `hist_synthetic_test.jsonl` — MC questions from held-out documents. Loaded as a categorical task in nanochat (same format as LABEval).
+Our `hist_synthetic_test.jsonl` — MC questions from held-out documents. Tests whether the model learned historical content. Loaded as a categorical task in nanochat (same pattern as `tasks/lab_eval.py`).
 
-#### Source 2: External Benchmarks (does the model retain general capabilities?)
+#### Source 2: External Benchmarks (time-invariant)
 
-Time-invariant benchmarks already in nanochat. These monitor catastrophic forgetting — scores should stay stable during training, not necessarily improve.
+Benchmarks already implemented in nanochat. We do NOT train on these datasets — they serve as independent capability monitors. Scores should stay stable during training; significant drops signal catastrophic forgetting.
 
-| Benchmark | Format | Contamination | What It Tests | In nanochat? |
-|-----------|--------|--------------|---------------|-------------|
-| ARC-Challenge | MC-4 | ~2% | Science reasoning | Yes |
-| HellaSwag | MC-4 | Low (est.) | Commonsense completion | Yes |
-| RACE-Middle | MC-4 + Passage | Low (est.) | Reading comprehension | Yes |
-| RACE-High | MC-4 + Passage | Low (est.) | Reading comprehension | Yes |
-| Winogrande | MC-2 | Low (est.) | Coreference resolution | Yes |
+| Benchmark | Format | LAB Contamination | What It Tests |
+|-----------|--------|-------------------|---------------|
+| ARC-Challenge | MC-4 | ~2% | Science reasoning |
+| HellaSwag | MC-4 | Low (est.) | Commonsense sentence completion |
+| RACE-Middle | MC-4 + Passage | Low (est.) | Reading comprehension |
+| RACE-High | MC-4 + Passage | Low (est.) | Reading comprehension |
+| Winogrande | MC-2 | Low (est.) | Coreference resolution |
 
 **Why not MMLU?** 34.6% LAB contamination (1950-1999 period). Too much post-period knowledge to serve as a time-invariant benchmark.
 
-**Why not GSM8K?** It's generative eval (sequential sampling) — too slow for frequent training-interval evaluation. Our Gen D MC4 format covers math reasoning in the internal test split.
+**Why not GSM8K?** It's generative eval (sequential sampling) — too slow for frequent training-interval evaluation. Our Gen D MC4 covers math reasoning in the internal test split.
 
-#### Source 3: LAB Eval (temporal isolation — the core thesis)
+#### How Our Generators Help With External Benchmarks
 
-5,000 MC questions per period about events AFTER the period's end year. A perfectly isolated model scores 25% (random chance).
+Although we don't train on external datasets, our generators produce data that exercises the same skills these benchmarks test:
 
-| Metric | Target | Meaning |
-|--------|--------|---------|
-| LAB accuracy | ~25% | Random chance = no future knowledge |
-| LAP score | < 0.05 | `(LAB_acc - 0.25) / 0.75` — 0 is perfect |
+| External Benchmark | Skill Tested | Our Generator | How It Helps |
+|--------------------|-------------|---------------|-------------|
+| ARC-Challenge | Science reasoning (cause-effect, analysis) | Gen A (Factual QA), Gen B (CoT) | Same MC-4 format; trains analytical reasoning over factual content, though our domain is history not science |
+| HellaSwag | Plausible sentence completion | Gen E (Historical Completion) | Same HellaSwag-style format — context + pick most natural continuation. Pattern match, but content differs (historical text vs everyday activities) |
+| RACE-Middle/High | Passage-based reading comprehension | Gen C (Comprehension), Gen F (Instruct) | Direct format match — both produce RACE-style passage + MC-4 questions. Our passages are historical; RACE passages are educational narratives |
+| Winogrande | Coreference resolution | None | No generator analog. Tests fundamental NLU from base pretraining. Serves purely as a forgetting detector |
+
+**Key insight:** ARC and Winogrande test capabilities that primarily come from base pretraining (science knowledge, coreference resolution). SFT/mid-training on historical data is unlikely to improve them — but shouldn't degrade them either. RACE and HellaSwag are the benchmarks most likely to benefit from our training, since Gen C/F and Gen E directly train those patterns.
+
+#### Source 3: LAB Eval (temporal isolation)
+
+5,000 MC questions per period about events AFTER the period's end year. A perfectly isolated model scores ~25% (random chance on 4-choice MC). Any accuracy significantly above 25% indicates look-ahead bias.
 
 ### Evaluation Schedule
 
-All three sources use categorical (MC) format — fast, batched, no sampling.
+All sources use categorical (MC) format — fast, batched logit comparison, no sampling. The same eval set runs at every training stage for consistent comparison.
 
 | Training Stage | Frequency | What to Evaluate |
 |----------------|-----------|------------------|
-| Base training | Every 2000 steps | CORE metric (base_eval.py) |
-| Mid-training | Every 200 steps | Internal MC + HellaSwag + Winogrande |
-| Mid-training | At boundaries | All 3 sources (full 5-benchmark + LAB) |
-| SFT | Every 200 steps | Internal MC + HellaSwag + Winogrande |
-| SFT | At boundaries | All 3 sources |
-| 1900_1949 | | | | | | | | | | |
-| 1950_1999 | | | | | | | | | | |
+| Base training | Every N steps | External benchmarks + LAB Eval |
+| Mid-training | Every N steps | Internal MC + External benchmarks + LAB Eval |
+| SFT | Every N steps | Internal MC + External benchmarks + LAB Eval |
 ---
 
 ## Dependencies
