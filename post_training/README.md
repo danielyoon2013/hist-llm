@@ -333,20 +333,21 @@ Our `hist_synthetic_test.jsonl` — MC questions from held-out documents. Tests 
 
 #### Source 2: External Benchmarks (time-invariant)
 
-Benchmarks already implemented in nanochat (except MathQA — to be added). We do NOT train on these datasets — they serve as independent capability monitors. Scores should stay stable during training; significant drops signal catastrophic forgetting.
+Benchmarks already implemented in nanochat (except MathQA and GSM-MC — to be added). We do NOT train on these datasets — they serve as independent capability monitors. Scores should stay stable during training; significant drops signal catastrophic forgetting.
 
-| Benchmark | Format | LAB Contamination | What It Tests |
-|-----------|--------|-------------------|---------------|
-| ARC-Challenge | MC-4 | ~2% | Causal mechanism application |
-| HellaSwag | MC-4 | Low (est.) | Narrative/activity sequence coherence |
-| RACE-Middle | MC-4 + Passage | Low (est.) | Factual extraction from passage |
-| RACE-High | MC-4 + Passage | Low (est.) | Inferential comprehension (author intent, synthesis) |
-| Winogrande | MC-2 | Low (est.) | Semantic coreference resolution |
-| MathQA | MC-5 | Low (est.) | Quantitative reasoning (arithmetic, rates, geometry) |
+| Benchmark | Format | Test Size | LAB Contamination | What It Tests |
+|-----------|--------|-----------|-------------------|---------------|
+| ARC-Challenge | MC-4 | 1,172 | ~2% | Causal mechanism application |
+| HellaSwag | MC-4 | 10,042 | Low (est.) | Narrative/activity sequence coherence |
+| RACE-Middle | MC-4 + Passage | 1,436 | Low (est.) | Factual extraction from passage |
+| RACE-High | MC-4 + Passage | 3,451 | Low (est.) | Inferential comprehension (author intent, synthesis) |
+| Winogrande | MC-2 | 1,267 | Low (est.) | Semantic coreference resolution |
+| MathQA | MC-5 | 2,985 | Low (est.) | Quantitative reasoning (arithmetic, rates, geometry) |
+| GSM-MC | MC-4 | 1,319 | 0.3% | Grade-school math word problems |
 
 **Why not MMLU?** 34.6% LAB contamination (1950-1999 period). Too much post-period knowledge to serve as a time-invariant benchmark.
 
-**Why not GSM8K?** It's generative eval (sequential sampling) — too slow for frequent training-interval evaluation. Our Gen D MC4 + MathQA cover math reasoning.
+**GSM-MC** (Zhang et al., 2024): MC conversion of GSM8K using distractors collected from real model mistakes across 60 open-source models. Strongly correlated with generative GSM8K scores (Pearson p < 0.001) while being 30x faster. Source: `github.com/Geralt-Targaryen/MC-Evaluation`.
 
 #### What Each Benchmark Actually Tests (Key Insights)
 
@@ -360,6 +361,7 @@ Understanding what makes the wrong answers wrong in each benchmark reveals what 
 | **RACE-High** | Partially correct but miss the nuance, scope, or tone — e.g., capturing one detail but not the author's overall argument | **Right detail, wrong big picture** |
 | **Winogrande** | The other entity in the same sentence — adversarial twin construction where one trigger word flips which entity the blank refers to | **Same sentence, wrong referent** |
 | **MathQA** | Numerically close answers from common calculation mistakes (wrong operation, off-by-one, rounding errors, forgetting a step) | **Plausible arithmetic mistakes** |
+| **GSM-MC** | Real incorrect answers produced by 60 open-source models on grade-school math — captures actual reasoning failures (wrong operations, partial computation, sign errors) | **Real model mistakes** |
 
 #### How Our Generators Align With External Benchmarks
 
@@ -368,19 +370,21 @@ Although we don't train on external datasets, our generators produce data that e
 | External Benchmark | Skill Tested | Our Generator | How It Aligns |
 |--------------------|-------------|---------------|--------------|
 | **ARC-Challenge** | Apply causal mechanisms to novel scenarios | Gen A (Factual QA), Gen B (CoT) | Both train analytical cause-effect reasoning in MC-4 format. Our distractors use same vocabulary but wrong reasoning — same ARC pattern, historical domain instead of science |
-| **HellaSwag** | Predict next step in an activity sequence | Gen E (Completion) | Prompt explicitly reframed to test narrative coherence: distractors are on-topic but narratively incoherent (don't logically follow from the setup), matching HellaSwag's core pattern |
+| **HellaSwag** | Predict next step in an activity sequence | Gen E (Completion) | Distractors are situationally off — they shift to a different topic than the stem (e.g., tariffs when discussing a prisoner). Answerable by comprehension alone ("which completion stays on topic?"), matching HellaSwag's core insight |
 | **RACE-Middle** | Extract facts from a passage | Gen C (Comprehension) | Direct format match — passage + MC-4. Our distractors are "plausible, clearly incorrect based on the passage" — same as RACE-M's contradicted-by-text pattern |
 | **RACE-High** | Infer author intent and synthesize across a passage | Gen F (Instruct), Gen C (Comprehension) | Gen C tests "main idea, inference, vocabulary, supporting detail" — covers RACE-H question types. Gen F adds instruction-following depth |
 | **Winogrande** | Resolve coreference via semantic understanding | None | No generator analog. Tests fundamental NLU from base pretraining. Serves purely as a catastrophic forgetting detector |
 | **MathQA** | Solve word problems with multi-step arithmetic | Gen D (Quantitative) | Both produce math word problems with step-by-step reasoning. Our distractors use "common arithmetic mistakes" — identical to MathQA's plausible-miscalculation pattern |
+| **GSM-MC** | Grade-school math reasoning (multi-step word problems) | Gen D (Quantitative) | Gen D trains the same skill: extract numbers from context, apply multi-step arithmetic, arrive at a numerical answer. GSM-MC covers basic operations; MathQA adds diversity (geometry, probability) |
 
 **Expected impact by benchmark:**
 
 | Benchmark | Expected Benefit from Our Training | Rationale |
 |-----------|-----------------------------------|-----------|
 | RACE-M/H | **High** | Gen C/F directly train passage comprehension in the same format |
-| HellaSwag | **Medium** | Gen E trains narrative coherence pattern; content differs (historical vs everyday) |
+| HellaSwag | **Medium** | Gen E trains situational comprehension; content differs (historical vs everyday) |
 | MathQA | **Medium** | Gen D trains quantitative reasoning; our problems are historically grounded, MathQA is general |
+| GSM-MC | **Medium** | Gen D trains multi-step arithmetic from historical text; GSM-MC tests the same skill on general word problems |
 | ARC-Challenge | **Low** | Gen A/B train analytical reasoning, but ARC tests science knowledge we don't teach |
 | Winogrande | **None** | No generator alignment; monitors forgetting only |
 
