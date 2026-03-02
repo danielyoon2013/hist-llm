@@ -1,8 +1,8 @@
 """
-Prompt templates for synthetic data generators (A-G).
+Prompt templates for synthetic data generators (A-F).
 
 Generators A+B: extracted from run_direct.py
-Generators C-G: new, designed per 03_SYNTHETIC_DATA_GENERATORS.md
+Generators C-F: new, designed per 03_SYNTHETIC_DATA_GENERATORS.md
 
 Each prompt requests all fields needed for multi-format rendering:
 - Generators needing MC format also request distractors
@@ -76,28 +76,7 @@ Passage:
 
 
 # ---------------------------------------------------------------------------
-# Generator D: Temporal Reasoning (metadata-based, no corpus)
-# Formats: MC-4, Open-ended
-# Already produces 4 choices — no prompt change needed
-# ---------------------------------------------------------------------------
-
-TEMPORAL_PROMPT = """Generate {num_items} temporal reasoning questions about historical events from the period {start_year}-{end_year}.
-
-Requirements:
-1. Questions should test temporal reasoning: ordering events, understanding cause-effect over time, comparing periods
-2. All referenced events must have occurred WITHIN or BEFORE {end_year} (never after)
-3. Each question must have exactly 4 answer choices labeled A, B, C, D
-4. Exactly one choice must be correct
-5. Include the domain and approximate year(s) being tested
-6. Vary across domains: politics, science, technology, culture, economics
-7. This is batch {batch_num} -- cover diverse sub-topics, avoid repetition
-
-Return a JSON object:
-{{"questions": [{{"question": "Which event occurred first: X or Y?", "choices": {{"A": "X occurred first", "B": "Y occurred first", "C": "They occurred simultaneously", "D": "Neither occurred during this period"}}, "correct": "A", "domain": "politics", "year": 1945}}]}}"""
-
-
-# ---------------------------------------------------------------------------
-# Generator E: Quantitative (from text with numbers)
+# Generator D: Quantitative (from text with numbers)
 # Formats: Open-ended, CoT
 # No distractors needed — only generative formats
 # ---------------------------------------------------------------------------
@@ -119,7 +98,7 @@ Text:
 
 
 # ---------------------------------------------------------------------------
-# Generator F: Sentence Completion (MC, HellaSwag-style)
+# Generator E: Sentence Completion (MC, HellaSwag-style)
 # Formats: MC-4, MC-2
 # Already produces 4 choices — no prompt change needed
 # ---------------------------------------------------------------------------
@@ -141,7 +120,7 @@ Text:
 
 
 # ---------------------------------------------------------------------------
-# Generator G: Instruction Following
+# Generator F: Instruction Following
 # Formats: MC-4+Passage (passage-only — instructions reference source text)
 # ---------------------------------------------------------------------------
 

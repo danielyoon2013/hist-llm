@@ -1,4 +1,8 @@
 """
+DEPRECATED: Use `python -m src.post_training.prepare` instead.
+Loaders have been consolidated into prepare.py.
+
+---
 Export sampled documents from additional data sources as individual .txt files
 for consumption by Meta's synthetic-data-kit.
 

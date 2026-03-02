@@ -155,7 +155,7 @@ def dedup_cross_generator(generator_files, priority_order=None):
 
     Format variants of the same generator are NOT considered duplicates.
     For example, gen_b_cot_mc4 and gen_b_cot_open share the same questions
-    by design — only gen_a_factual_open vs gen_g_instruct_open would dedup.
+    by design — only gen_a_factual_open vs gen_f_instruct_open would dedup.
 
     Higher-priority generators keep their examples.
 

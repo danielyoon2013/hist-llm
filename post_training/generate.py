@@ -12,20 +12,19 @@ Usage:
     python -m src.post_training.generate process --period 1900_1949
 
     # Sync mode (testing / small runs)
-    python -m src.post_training.generate --period 1900_1949 --target 140 --sync
+    python -m src.post_training.generate --period 1900_1949 --target 120 --sync
 
     # Run specific generators only
     python -m src.post_training.generate submit --period 1900_1949 --generators A B D
 
 Allocation is derived from format counts (equal weight per format slot).
-At --target 1,000,000 with 14 format slots (71,428 per slot):
-    A (Factual QA):       142,856  — corpus
-    B (Chain-of-Thought): 214,284  — corpus
-    C (Comprehension):    142,856  — corpus
-    D (Temporal):         142,856  — metadata
-    E (Quantitative):     142,856  — corpus
-    F (Completion):       142,856  — corpus
-    G (Instruct):          71,428  — corpus
+At --target 1,000,000 with 12 format slots (83,333 per slot):
+    A (Factual QA):       166,666  — corpus
+    B (Chain-of-Thought): 249,999  — corpus
+    C (Comprehension):    166,666  — corpus
+    D (Quantitative):     166,666  — corpus
+    E (Completion):       166,666  — corpus
+    F (Instruct):          83,333  — corpus
 """
 
 import argparse
@@ -78,16 +77,15 @@ def main():
     print(f"Period: {args.period} ({PERIODS[args.period][0]}-{PERIODS[args.period][1]})")
     print(f"Target: {args.target:,} total examples")
     print(f"{'='*70}")
-    print(f"\n{'Generator':<12} {'Type':<10} {'Target':>10} {'Docs':>10}")
-    print(f"{'-'*50}")
+    print(f"\n{'Generator':<12} {'Target':>10} {'Docs':>10}")
+    print(f"{'-'*40}")
     for g in sorted(gen_keys):
-        gtype = "metadata" if not GENERATOR_SPEC[g]["corpus"] else "corpus"
         docs = plan["generators"][g]["docs_needed"]
         docs_str = f"{docs:,}" if docs else "—"
-        print(f"  {g:<10} {gtype:<10} {plan['generators'][g]['target']:>10,} {docs_str:>10}")
-    print(f"{'-'*50}")
+        print(f"  {g:<10} {plan['generators'][g]['target']:>10,} {docs_str:>10}")
+    print(f"{'-'*40}")
     total = sum(plan["generators"][g]["target"] for g in gen_keys)
-    print(f"  {'TOTAL':<10} {'':10} {total:>10,}")
+    print(f"  {'TOTAL':<10} {total:>10,}")
     print()
 
     registry = get_generator_registry()

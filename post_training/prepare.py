@@ -1,7 +1,7 @@
 """
 Prepare corpus documents for synthetic data generation.
 
-Replaces the old 3-script sequence (build_index → export → export_additional)
+Replaces the old 3-script sequence (build_index + export + export_additional)
 with a single command that produces uniform parquets.
 
 Usage:
@@ -23,61 +23,142 @@ Output:
 
 import os
 import re
+import json
 import argparse
 from glob import glob
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from src.post_training.config import PERIODS, DATA_ROOT, get_paths
 
 
 # ---------------------------------------------------------------------------
-# Quality model periods (25-year bins used by Ridge classifiers)
+# Additional data loaders — each returns DataFrame with [text, source_id]
 # ---------------------------------------------------------------------------
 
-QUALITY_PERIODS = [
-    (1678, 1700, "1678_1700"),
-    (1701, 1725, "1701_1725"),
-    (1726, 1750, "1726_1750"),
-    (1751, 1775, "1751_1775"),
-    (1776, 1800, "1776_1800"),
-    (1801, 1825, "1801_1825"),
-    (1826, 1850, "1826_1850"),
-    (1851, 1875, "1851_1875"),
-    (1876, 1900, "1876_1900"),
-    (1901, 1925, "1901_1925"),
-    (1926, 1950, "1926_1950"),
-    (1951, 1975, "1951_1975"),
-    (1976, 2000, "1976_2000"),
-    (2001, 2023, "2001_2023"),
-]
-
-MODELS_DIR = DATA_ROOT / "processing" / "quality_models"
-
-
-def year_to_quality_period(year):
-    """Map a year to its 25-year quality model period."""
-    for start, end, period in QUALITY_PERIODS:
-        if start <= year <= end:
-            return period
-    return None
+ADDITIONAL_DATASETS = {
+    "nyt_filtered": {
+        "config_key": "nyt_filtered_dir",
+        "classified_name": "nyt",
+        "description": "NYT filtered abstracts (500+ chars)",
+    },
+    "economist": {
+        "config_key": "economist_dir",
+        "classified_name": "economist",
+        "description": "The Economist (OCR text)",
+    },
+    "ft": {
+        "config_key": "ft_dir",
+        "classified_name": "ft",
+        "description": "Financial Times (cleaned text)",
+    },
+    "newswire": {
+        "config_key": "newswire_dir",
+        "classified_name": "newswire",
+        "description": "US Newswire articles (cleaned)",
+    },
+}
 
 
-def load_quality_model(period):
-    """Load scaler and Ridge model for a quality period. Returns (scaler, model) or None."""
-    import joblib
+def _load_nyt_filtered(data_dir, start_year, end_year):
+    """Load NYT filtered abstracts from yearly parquet files."""
+    frames = []
+    for year in range(max(start_year, 1851), min(end_year, 2017) + 1):
+        path = data_dir / f"nyt_{year}.parquet"
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path, columns=["combined_text", "_id"])
+        df.rename(columns={"combined_text": "text", "_id": "source_id"}, inplace=True)
+        df["year"] = year
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(columns=["text", "source_id", "year"])
+    return pd.concat(frames, ignore_index=True)
 
-    scaler_path = MODELS_DIR / f"scaler_{period}.pkl"
-    model_path = MODELS_DIR / f"ridge_{period}.pkl"
 
-    if not scaler_path.exists() or not model_path.exists():
-        return None
+def _load_economist(data_dir, start_year, end_year):
+    """Load Economist articles from weekly parquet files."""
+    all_files = sorted(data_dir.glob("economist_*.parquet"))
+    matching = []
+    for f in all_files:
+        try:
+            year = int(f.stem.split("_")[1].split("-")[0])
+        except (IndexError, ValueError):
+            continue
+        if start_year <= year <= end_year:
+            matching.append((f, year))
 
-    scaler = joblib.load(scaler_path)
-    model = joblib.load(model_path)
-    return scaler, model
+    if not matching:
+        return pd.DataFrame(columns=["text", "source_id", "year"])
+
+    frames = []
+    for i, (f, year) in enumerate(matching):
+        try:
+            df = pd.read_parquet(f, columns=["ocr_text", "article_id"])
+            df.rename(columns={"ocr_text": "text", "article_id": "source_id"},
+                      inplace=True)
+            df["year"] = year
+            frames.append(df)
+        except Exception as e:
+            print(f"  Warning: Failed to read {f.name}: {e}")
+        if (i + 1) % 500 == 0:
+            print(f"  Read {i + 1}/{len(matching)} Economist files...")
+
+    if not frames:
+        return pd.DataFrame(columns=["text", "source_id", "year"])
+    return pd.concat(frames, ignore_index=True)
+
+
+def _load_ft(data_dir, start_year, end_year):
+    """Load Financial Times articles from yearly parquet files."""
+    frames = []
+    for year in range(max(start_year, 1888), min(end_year, 2006) + 1):
+        path = data_dir / f"{year}.parquet"
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path, columns=["text_cleaned", "id"])
+        df.rename(columns={"text_cleaned": "text", "id": "source_id"}, inplace=True)
+        df["year"] = year
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(columns=["text", "source_id", "year"])
+    return pd.concat(frames, ignore_index=True)
+
+
+def _load_newswire(data_dir, start_year, end_year):
+    """Load Newswire articles from yearly JSON files."""
+    frames = []
+    for year in range(max(start_year, 1878), min(end_year, 1977) + 1):
+        path = data_dir / f"{year}_data_clean.json"
+        if not path.exists():
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            print(f"  Warning: Skipping {path.name} (corrupted JSON: {e})")
+            continue
+        records = []
+        for idx, item in enumerate(data):
+            text = item.get("cleaned_article", "")
+            records.append({
+                "text": text,
+                "source_id": f"newswire_{year}_{idx}",
+                "year": year,
+            })
+        frames.append(pd.DataFrame(records))
+    if not frames:
+        return pd.DataFrame(columns=["text", "source_id", "year"])
+    return pd.concat(frames, ignore_index=True)
+
+
+_LOADERS = {
+    "nyt_filtered": _load_nyt_filtered,
+    "economist": _load_economist,
+    "ft": _load_ft,
+    "newswire": _load_newswire,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -195,31 +276,33 @@ def prepare_additional(period, quality_percentile=50, max_per_collection=10000,
                        min_text_length=200, seed=42):
     """Export additional datasets as parquets with quality filtering.
 
+    Uses pre-calculated quality scores from
+    D:/hist_LLM/additional_data/classified/{collection}/classified_{year}.parquet
+    (generated by src/base_training/quality/classify_additional.py).
+
     Steps per dataset:
-    1. Load text via existing loaders
+    1. Load text via loaders
     2. Filter by min text length
-    3. If embeddings + quality models available: apply quality filtering
+    3. Join pre-calculated quality scores and apply percentile filter
     4. Cap at max_per_collection docs
     5. Write as {dataset}.parquet
     """
-    from src.post_training.corpus.export_additional import DATASETS, LOADERS
-
     paths = get_paths(period)
     start_year, end_year = paths["start_year"], paths["end_year"]
     input_base = paths["synthetic_dir"] / "input"
-    embeddings_root = DATA_ROOT / "additional_data" / "embeddings"
+    classified_root = DATA_ROOT / "additional_data" / "classified"
 
     os.makedirs(input_base, exist_ok=True)
 
     summary = []
-    for ds_name, ds_info in DATASETS.items():
+    for ds_name, ds_info in ADDITIONAL_DATASETS.items():
         data_dir = paths[ds_info["config_key"]]
         if not data_dir.exists():
             print(f"  {ds_name}: directory not found, skipping")
             summary.append((ds_name, 0, 0))
             continue
 
-        loader = LOADERS[ds_name]
+        loader = _LOADERS[ds_name]
         pool = loader(data_dir, start_year, end_year)
 
         # Basic text filter
@@ -232,10 +315,11 @@ def prepare_additional(period, quality_percentile=50, max_per_collection=10000,
             summary.append((ds_name, 0, 0))
             continue
 
-        # Quality filtering via embeddings + Ridge models (if available)
-        pool = _apply_quality_filter(
-            pool, ds_name, embeddings_root, start_year, end_year,
-            quality_percentile,
+        # Quality filtering via pre-calculated classified parquets
+        classified_name = ds_info["classified_name"]
+        pool = _apply_quality_filter_from_classified(
+            pool, classified_name, classified_root,
+            start_year, end_year, quality_percentile,
         )
         filtered_count = len(pool)
 
@@ -262,88 +346,68 @@ def prepare_additional(period, quality_percentile=50, max_per_collection=10000,
     return summary
 
 
-def _apply_quality_filter(pool, ds_name, embeddings_root, start_year, end_year,
-                          quality_percentile):
-    """Apply quality filtering using embeddings + Ridge models if available.
+def _apply_quality_filter_from_classified(pool, classified_name, classified_root,
+                                          start_year, end_year, quality_percentile):
+    """Apply quality filtering using pre-calculated classified parquets.
 
-    Falls back to no filtering (text length only) if embeddings or models
-    are not available.
+    Reads from: classified_root/{classified_name}/classified_{year}.parquet
+    These files have columns [identifier, predicted_quality] and are generated
+    by src/base_training/quality/classify_additional.py.
     """
-    emb_dir = embeddings_root / ds_name
-    if not emb_dir.exists():
-        print(f"    (no embeddings found for {ds_name}, skipping quality filter)")
+    classified_dir = classified_root / classified_name
+    if not classified_dir.exists():
+        print(f"    (no classified scores for {classified_name}, skipping quality filter)")
         return pool
 
-    # Load embeddings for the year range
-    emb_frames = []
+    # Load quality scores for the year range
+    score_frames = []
     for year in range(start_year, end_year + 1):
-        emb_path = emb_dir / f"embeddings_{year}.parquet"
-        if emb_path.exists():
-            emb_frames.append(pd.read_parquet(emb_path))
+        path = classified_dir / f"classified_{year}.parquet"
+        if path.exists():
+            score_frames.append(pd.read_parquet(path))
 
-    if not emb_frames:
-        print(f"    (no embeddings for year range, skipping quality filter)")
+    if not score_frames:
+        print(f"    (no classified scores for year range, skipping quality filter)")
         return pool
 
-    emb_df = pd.concat(emb_frames, ignore_index=True)
+    scores_df = pd.concat(score_frames, ignore_index=True)
 
-    # Check if 'embedding' column exists
-    if "embedding" not in emb_df.columns:
-        print(f"    (no 'embedding' column found, skipping quality filter)")
-        return pool
-
-    # Apply quality models per quality-period
-    scores = []
-    for _, row in emb_df.iterrows():
-        year = row.get("year", start_year)
-        qp = year_to_quality_period(year)
-        if qp is None:
-            scores.append(np.nan)
-            continue
-        # Cache model loading would be nice, but keep it simple for now
-        models = load_quality_model(qp)
-        if models is None:
-            scores.append(np.nan)
-            continue
-        scaler, model = models
-        X = np.array(row["embedding"]).reshape(1, -1)
-        X_scaled = scaler.transform(X)
-        scores.append(model.predict(X_scaled)[0])
-
-    emb_df["predicted_quality"] = scores
-
-    # Join scores back to text pool
-    # Try common identifier columns
+    # The classified files use 'identifier' which is the original_index from embeddings.
+    # Try to join via source_id (which matches the original identifier in the text data).
     id_col = None
     for candidate in ["source_id", "identifier", "_id", "id", "article_id"]:
-        if candidate in pool.columns and candidate in emb_df.columns:
+        if candidate in pool.columns:
             id_col = candidate
             break
 
     if id_col is None:
-        # Fall back to index-based join if both have same length
-        if len(pool) == len(emb_df):
-            pool = pool.reset_index(drop=True)
-            pool["predicted_quality"] = emb_df["predicted_quality"].values
-        else:
-            print(f"    (cannot join embeddings to text, skipping quality filter)")
-            return pool
-    else:
-        emb_scores = emb_df[[id_col, "predicted_quality"]].dropna()
-        pool = pool.merge(emb_scores, on=id_col, how="left")
+        print(f"    (no identifier column in pool, skipping quality filter)")
+        return pool
+
+    # Join scores
+    scores_df = scores_df.rename(columns={"identifier": id_col})
+    before = len(pool)
+    pool = pool.merge(
+        scores_df[[id_col, "predicted_quality"]].drop_duplicates(subset=[id_col]),
+        on=id_col, how="left",
+    )
 
     # Filter by percentile (only on rows that have scores)
     has_score = pool["predicted_quality"].notna()
-    if has_score.sum() > 0:
+    n_scored = has_score.sum()
+
+    if n_scored > 0:
         threshold = pool.loc[has_score, "predicted_quality"].quantile(
             quality_percentile / 100
         )
+        # Keep: rows without scores (can't filter) OR rows above threshold
         pool = pool[~has_score | (pool["predicted_quality"] >= threshold)]
-        n_filtered = has_score.sum() - (pool["predicted_quality"].notna()).sum()
-        print(f"    (quality filter: removed {n_filtered:,} below "
-              f"p{quality_percentile} threshold)")
+        n_removed = before - len(pool)
+        print(f"    (quality filter: {n_scored:,} scored, removed {n_removed:,} "
+              f"below p{quality_percentile})")
+    else:
+        print(f"    (no scores matched, skipping quality filter)")
 
-    # Drop the quality column before returning
     pool = pool.drop(columns=["predicted_quality"], errors="ignore")
     return pool
 
@@ -354,7 +418,7 @@ def _apply_quality_filter(pool, ds_name, embeddings_root, start_year, end_year,
 
 def prepare(period, source="all", quality_percentile=50, max_per_collection=10000,
             min_text_length=200, seed=42):
-    """One-stop preparation: corpus + additional → uniform parquets."""
+    """One-stop preparation: corpus + additional -> uniform parquets."""
     paths = get_paths(period)
     input_base = paths["synthetic_dir"] / "input"
 
