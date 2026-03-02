@@ -101,11 +101,11 @@ QUANTITATIVE_PROMPT = """Create {num_items} math word problems inspired by the n
 
 Requirements:
 1. Extract real numbers, dates, percentages, or quantities from the text
-2. Create word problems that require mathematical reasoning (arithmetic, percentages, comparisons, rates)
+2. Create word problems that require mathematical reasoning (arithmetic, percentages, comparisons, rates, probability/combinatorics when applicable)
 3. Each problem should have step-by-step reasoning and a final numerical answer
 4. Problems should be grounded in the historical context of the text
 5. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
-6. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: one percentage change, one ratio, one difference, etc.
+6. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, probability, combinatorics, etc.
 7. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
 8. CRITICAL — Distractors must be the same format as the correct answer (e.g., if the answer is a number, distractors must be numbers). Make distractors plausible by using common arithmetic mistakes (off-by-one, wrong operation, rounding errors).
 
@@ -124,18 +124,18 @@ Text:
 
 COMPLETION_PROMPT = """Create {num_items} sentence completion questions from this text in HellaSwag style.
 
-The goal is to test NARRATIVE COHERENCE — whether the reader understands what logically follows in the narrative, not whether they memorized specific facts.
+The goal is to test SITUATIONAL COMPREHENSION — whether the reader can identify which completion fits the current situation, without needing any external knowledge.
 
 Requirements:
 1. Take a sentence or short passage from the text and truncate it at a natural point
 2. Create 4 possible completions (A, B, C, D): one correct (from the text) and three wrong
-3. The correct completion should follow naturally from the narrative setup
+3. The correct completion should continue the SAME narrative thread as the stem
 4. Wrong completions MUST be:
-   - Grammatically correct and similar in length AND specificity to the correct completion. CRITICAL: if the correct completion is one sentence, distractors must also be one sentence. Do NOT make the correct answer longer.
-   - On-topic (same historical domain, same era, same type of action)
-   - Specific — mention concrete actions, names, or details (NEVER vague like "took a different approach" or "faced many challenges")
-   - NARRATIVELY INCOHERENT — they describe plausible actions that do NOT logically follow from the specific setup. Example: if the stem describes someone "reopening a question about claims," a wrong completion about "submitting a tariff report" is on-topic diplomacy but doesn't follow from claim negotiations.
+   - Grammatically correct and similar in length to the correct completion. CRITICAL: if the correct completion is one sentence, distractors must also be one sentence. Do NOT make the correct answer longer.
+   - SITUATIONALLY OFF — they shift to a different topic, subject, or type of action that does not fit the current situation. Example: if the stem discusses a prisoner exchange, wrong completions should be about unrelated matters (tariff negotiations, troop deployments, treaty provisions) — NOT alternative prisoner outcomes.
+   - The test must be answerable by comprehension alone: "which completion continues what the sentence is actually about?" A reader should NOT need historical knowledge to eliminate wrong answers.
    - NEVER contradict the stem directly (if stem says "not satisfied", do NOT say "expressed satisfaction")
+   - NEVER be vague (no "faced many challenges" or "took a different approach")
 5. The context must be SELF-CONTAINED — it should make sense on its own without the source text. Do NOT reference "the text" or "the passage".
 6. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
 
