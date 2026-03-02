@@ -370,7 +370,7 @@ All sources use categorical (MC) format — fast, batched logit comparison, no s
 
 | Training Stage | Frequency | What to Evaluate |
 |----------------|-----------|------------------|
-| Base training | Every N steps | External benchmarks + LAB Eval |
+| Base training | Every N steps | Internal MC + External benchmarks + LAB Eval |
 | Mid-training | Every N steps | Internal MC + External benchmarks + LAB Eval |
 | SFT | Every N steps | Internal MC + External benchmarks + LAB Eval |
 ---
