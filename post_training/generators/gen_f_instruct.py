@@ -2,7 +2,7 @@
 
 from src.post_training.generators.base import (
     BaseGenerator, FORMAT_MC4_PASSAGE,
-    render_mc, make_mc_choices, truncate_passage,
+    render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import INSTRUCT_PROMPT
 
@@ -13,17 +13,20 @@ class GenFInstruct(BaseGenerator):
     name = "gen_f_instruct"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return INSTRUCT_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
+        return INSTRUCT_PROMPT.format(
+            num_items=self.items_per_chunk, text=chunk,
+            start_year=start_year, end_year=end_year,
+        )
 
     def parse_response(self, response):
         return response.get("tasks", [])
 
     def format_conversation(self, item, fmt, source_chunk=None):
         instruction = item.get("instruction", "")
+        passage = item.get("passage", "")
 
         if fmt == FORMAT_MC4_PASSAGE:
-            # RACE-style: passage + instruction as question, short answers as MC choices
-            if not source_chunk:
+            if not passage:
                 return None
             short_answer = item.get("short_answer", "")
             distractors = item.get("distractors", [])
@@ -33,7 +36,6 @@ class GenFInstruct(BaseGenerator):
                 short_answer, distractors, num_choices=4,
                 position_idx=next(self._mc_counters[fmt]),
             )
-            passage = truncate_passage(source_chunk)
             passage_question = (
                 f"Read the following passage and answer the question.\n\n"
                 f"Passage: {passage}\n\n{instruction}"

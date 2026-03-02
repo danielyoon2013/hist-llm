@@ -59,24 +59,36 @@ Text:
 
 # ---------------------------------------------------------------------------
 # Generator C: Reading Comprehension (MC)
-# Formats: MC-4+Passage (passage-only — questions reference source text)
-# Already produces 4 choices — no prompt change needed
+# Formats: MC-4+Passage (GPT produces clean passage + MC questions)
 # ---------------------------------------------------------------------------
 
-COMPREHENSION_PROMPT = """Read the following passage and create {num_items} reading comprehension multiple-choice questions.
+COMPREHENSION_PROMPT = """You are given raw source text from a historical document published between {start_year} and {end_year}. The text may be poorly formatted (broken words, column artifacts, mid-sentence starts).
 
-Requirements:
+Your task has two parts:
+
+PART 1 — Write a clean passage:
+- Rewrite the source content into a well-structured, self-contained passage of 150-300 words
+- The passage must start and end at natural sentence boundaries
+- Faithfully represent the source content — do NOT invent facts, add modern context, or include any information beyond what is stated or clearly implied in the source text
+- CRITICAL — TEMPORAL CONSTRAINT: Do NOT introduce any knowledge, events, terminology, or references from after {end_year}. The passage must read as if written during the {start_year}-{end_year} period.
+- Fix OCR artifacts (broken words, garbled text) but preserve the original meaning
+- Write in clear, coherent prose suitable for a reading comprehension exercise
+- Write the passage as direct prose about the subject matter — do NOT begin with meta-references like "The text discusses", "The passage describes", "This document outlines", "This passage covers", etc. Start directly with the historical content.
+
+PART 2 — Create {num_items} multiple-choice questions about your passage:
 1. Each question should test understanding of the passage (main idea, inference, vocabulary in context, supporting detail)
 2. Each question must have exactly 4 answer choices labeled A, B, C, D
 3. Exactly one choice must be correct
 4. Wrong choices should be plausible, clearly incorrect based on the passage, and similar in length to the correct choice
 5. Include a mix of difficulty levels
-6. IMPORTANT — Each question must test a DIFFERENT aspect of the passage. Use diverse question types: one about the main idea, one about a specific detail, one requiring inference, etc. Do NOT ask two questions about the same fact.
+6. Each question must test a DIFFERENT aspect of the passage — one about the main idea, one about a specific detail, one requiring inference, etc.
 
 Return a JSON object:
-{{"questions": [{{"question": "What does the passage suggest about...?", "choices": {{"A": "Choice 1", "B": "Choice 2", "C": "Choice 3", "D": "Choice 4"}}, "correct": "B"}}]}}
+{{"questions": [{{"passage": "Your clean 150-300 word passage here.", "question": "What does the passage suggest about...?", "choices": {{"A": "Choice 1", "B": "Choice 2", "C": "Choice 3", "D": "Choice 4"}}, "correct": "B"}}]}}
 
-Passage:
+IMPORTANT: The "passage" field must be IDENTICAL across all items — write it once and repeat it in each item.
+
+Source text:
 {text}"""
 
 
@@ -132,24 +144,37 @@ Text:
 
 # ---------------------------------------------------------------------------
 # Generator F: Instruction Following
-# Formats: MC-4+Passage (passage-only — instructions reference source text)
+# Formats: MC-4+Passage (GPT produces clean passage + instruction pairs)
 # ---------------------------------------------------------------------------
 
-INSTRUCT_PROMPT = """Create {num_items} instruction-response pairs grounded in this text.
+INSTRUCT_PROMPT = """You are given raw source text from a historical document published between {start_year} and {end_year}. The text may be poorly formatted (broken words, column artifacts, mid-sentence starts).
 
-Requirements:
+Your task has two parts:
+
+PART 1 — Write a clean passage:
+- Rewrite the source content into a well-structured, self-contained passage of 150-300 words
+- The passage must start and end at natural sentence boundaries
+- Faithfully represent the source content — do NOT invent facts, add modern context, or include any information beyond what is stated or clearly implied in the source text
+- CRITICAL — TEMPORAL CONSTRAINT: Do NOT introduce any knowledge, events, terminology, or references from after {end_year}. The passage must read as if written during the {start_year}-{end_year} period.
+- Fix OCR artifacts (broken words, garbled text) but preserve the original meaning
+- Write in clear, coherent prose suitable for an instruction-following exercise
+- Write the passage as direct prose about the subject matter — do NOT begin with meta-references like "The text discusses", "The passage describes", "This document outlines", "This passage covers", etc. Start directly with the historical content.
+
+PART 2 — Create {num_items} instruction-response pairs about your passage:
 1. Instructions should be diverse: summarize, explain, compare, analyze, list, describe
-2. Responses must be directly supported by the text content
+2. Responses must be directly supported by the passage content
 3. Responses should be detailed and well-structured (2-4 paragraphs)
-4. Do NOT include information beyond what the text provides
+4. Do NOT include information beyond what the passage provides
 5. For each pair, also provide:
    - "short_answer": a concise 1-2 sentence summary of the response
    - "distractors": 3 plausible but INCORRECT short answer alternatives
    - CRITICAL: Distractors must be similar in length and detail to the short_answer
-6. IMPORTANT — Each instruction must use a DIFFERENT instruction type (e.g., one summarize, one analyze, one compare). Do NOT repeat the same type or ask about the same aspect twice.
+6. Each instruction must use a DIFFERENT instruction type (e.g., one summarize, one analyze, one compare). Do NOT repeat the same type.
 
 Return a JSON object:
-{{"tasks": [{{"instruction": "Summarize the key developments described in this passage.", "response": "The passage describes...", "short_answer": "The passage covers X and Y developments.", "distractors": ["The passage focuses on Z.", "The main topic is W.", "The text describes Q."]}}]}}
+{{"tasks": [{{"passage": "Your clean 150-300 word passage here.", "instruction": "Summarize the key developments described in this passage.", "response": "The passage describes...", "short_answer": "The passage covers X and Y developments.", "distractors": ["The passage focuses on Z.", "The main topic is W.", "The text describes Q."]}}]}}
 
-Text:
+IMPORTANT: The "passage" field must be IDENTICAL across all items — write it once and repeat it in each item.
+
+Source text:
 {text}"""
