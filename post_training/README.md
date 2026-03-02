@@ -79,7 +79,7 @@ Each generator independently samples its own docs from `synthetic/input/`. All o
 | Output | Size | Description |
 |--------|-----:|-------------|
 | Mid-train | ~950,000 | All formats from 95% of docs |
-| SFT | 10,000 | 1% proportional subsample from train |
+| SFT | ~9,500 | ~1% proportional subsample from train |
 | Test | ~50,000 | MC-only from 5% held-out docs |
 
 ---
@@ -275,7 +275,7 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 ├── final/
 │   ├── train/                         # Final train splits (Step 3: assemble.py)
 │   │   ├── hist_synthetic_midtrain.jsonl  # All formats from train docs (~950K)
-│   │   └── hist_synthetic_sft.jsonl       # 1% proportional subsample (10K)
+│   │   └── hist_synthetic_sft.jsonl       # ~1% proportional subsample (~9.5K)
 │   └── test/
 │       └── hist_synthetic_test.jsonl      # MC-only from held-out docs (~50K)
 │
@@ -314,7 +314,7 @@ Load as a custom eval task (same pattern as `tasks/lab_eval.py`).
 | Output | Size | Format | Purpose |
 |--------|-----:|--------|---------|
 | `hist_synthetic_midtrain.jsonl` | ~950K | All formats (mc4, open, cot, passage) | Mid-training |
-| `hist_synthetic_sft.jsonl` | 10,000 | Proportional subsample from train | SFT |
+| `hist_synthetic_sft.jsonl` | ~9,500 | Proportional subsample (~1% of train) | SFT |
 | `hist_synthetic_test.jsonl` | ~50K | MC-only (`mc4`, `mc4_passage`) | Categorical eval |
 
 **Why document-level?** If the same chunk produces both `open` and `mc4` formats, putting `open` in train and `mc4` in test creates content leakage — the model has seen the answer during training. By splitting at the document level, test questions come from documents the model has never seen in any format.

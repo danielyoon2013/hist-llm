@@ -104,7 +104,7 @@ def get_paths(period: str):
 # ---------------------------------------------------------------------------
 
 DEFAULT_TARGET = 1_000_000      # 1M mid-train examples per period
-DEFAULT_SFT_SIZE = 10_000       # 10K SFT examples (1% proportional subsample)
+DEFAULT_SFT_SIZE = 9_500        # ~1% of train (95% of 1M target)
 DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
 
 # ---------------------------------------------------------------------------
