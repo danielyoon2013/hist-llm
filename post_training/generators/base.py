@@ -497,8 +497,9 @@ class BaseGenerator(ABC):
                 "temperature": 0.7,
             })
 
-        # Split into chunks (OpenAI limit: ~100MB / 50K requests per batch)
-        CHUNK_SIZE = 40_000
+        # Split into chunks (OpenAI gpt-4o-mini limit: 200MB per batch file)
+        # At ~7KB/request, 25K requests ≈ 175MB — safe margin under 200MB
+        CHUNK_SIZE = 25_000
         chunks = [requests[i:i + CHUNK_SIZE]
                   for i in range(0, len(requests), CHUNK_SIZE)]
 
