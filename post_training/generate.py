@@ -18,13 +18,13 @@ Usage:
     python -m src.post_training.generate submit --period 1900_1949 --generators A B D
 
 Allocation is derived from format counts (equal weight per format slot).
-At --target 1,000,000 with 12 format slots (83,333 per slot):
-    A (Factual QA):       166,666  — corpus
-    B (Chain-of-Thought): 249,999  — corpus
-    C (Comprehension):    166,666  — corpus
-    D (Quantitative):     166,666  — corpus
-    E (Completion):       166,666  — corpus
-    F (Instruct):          83,333  — corpus
+At --target 1,000,000 with 9 format slots (111,111 per slot):
+    A (Factual QA):       222,222  — corpus
+    B (Chain-of-Thought): 222,222  — corpus
+    C (Comprehension):    111,111  — corpus
+    D (Quantitative):     222,222  — corpus
+    E (Completion):       111,111  — corpus
+    F (Instruct):         111,111  — corpus
 """
 
 import argparse

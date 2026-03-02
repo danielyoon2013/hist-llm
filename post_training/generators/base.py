@@ -12,6 +12,7 @@ Common patterns:
 """
 
 import os
+import re
 import json
 import time
 import random as _random
@@ -42,6 +43,26 @@ FORMAT_OPEN = "open"              # Open-ended Q&A (GSM8K)
 FORMAT_COT = "cot"                # Chain-of-thought with <think> tags
 
 MAX_PASSAGE_LENGTH = 2000  # Truncate passages for passage-based formats
+
+
+# ---------------------------------------------------------------------------
+# OCR text cleaning
+# ---------------------------------------------------------------------------
+
+def clean_ocr_text(text):
+    """Clean common OCR artifacts from historical document text.
+
+    Fixes:
+    - Hyphenated word breaks: 'respon- sible' → 'responsible'
+    - Excessive internal whitespace
+    """
+    # Rejoin words broken by hyphen + whitespace + lowercase continuation.
+    # Targets OCR line-break artifacts (e.g. "produc- tion", "Repub- lican").
+    # Safe: real hyphens ("post-armistice") have no space after the hyphen.
+    text = re.sub(r'(\w)- +([a-z])', r'\1\2', text)
+    # Collapse runs of whitespace (spaces/tabs) to single space
+    text = re.sub(r'[^\S\n]{2,}', ' ', text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -607,13 +628,13 @@ class BaseGenerator(ABC):
                     if row.get("text") and str(row["text"]).strip():
                         docs.append((
                             f"{collection}/{row.get('doc_name', 'unknown')}",
-                            row["text"],
+                            clean_ocr_text(row["text"]),
                         ))
             elif collection_dir.exists():
                 for txt_file in sorted(collection_dir.glob("*.txt")):
                     text = txt_file.read_text(encoding="utf-8")
                     if text.strip():
-                        docs.append((f"{collection}/{txt_file.stem}", text))
+                        docs.append((f"{collection}/{txt_file.stem}", clean_ocr_text(text)))
 
         if max_docs and len(docs) > max_docs:
             import random

@@ -113,8 +113,8 @@ DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
 # Allocation is purely determined by format count: each format slot gets
 # an equal share of the target. No manual percentages to maintain.
 #
-# At 1M target with 12 total format slots:
-#   per_slot = 83,333  →  A(2)=166,666  B(3)=249,999  ...  F(1)=83,333
+# At 1M target with 9 total format slots:
+#   per_slot = 111,111  →  A(2)=222,222  B(2)=222,222  ...  F(1)=111,111
 #
 # All generators are corpus-based (need document text).
 
@@ -122,12 +122,12 @@ ITEMS_PER_CALL = 2      # items requested per API call (all generators)
 CHUNKS_PER_DOC = 2      # average chunks per document (6000 chars, 300 overlap)
 
 GENERATOR_SPEC = {
-    "A": {"formats": ("mc4", "open"),                "corpus": True},
-    "B": {"formats": ("mc4", "open", "cot"),         "corpus": True},
-    "C": {"formats": ("mc4_passage", "mc2_passage"), "corpus": True},
-    "D": {"formats": ("open", "cot"),                "corpus": True},
-    "E": {"formats": ("mc4", "mc2"),                 "corpus": True},
-    "F": {"formats": ("mc4_passage",),               "corpus": True},
+    "A": {"formats": ("mc4", "open"),        "corpus": True},
+    "B": {"formats": ("mc4", "cot"),         "corpus": True},   # removed "open" (redundant — cot already contains the answer)
+    "C": {"formats": ("mc4_passage",),       "corpus": True},   # removed "mc2_passage" (artificial 2-choice reduction)
+    "D": {"formats": ("open", "cot"),        "corpus": True},
+    "E": {"formats": ("mc4",),              "corpus": True},   # removed "mc2" (discards 2 distractors from mc4)
+    "F": {"formats": ("mc4_passage",),       "corpus": True},
 }
 
 
@@ -138,8 +138,8 @@ def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
         {
             "target": 1_000_000,
             "generators": {
-                "A": {"target": 166,668, "per_format": 83,333, "docs_needed": 20,834},
-                "B": {"target": 249,999, "per_format": 83,333, "docs_needed": 20,834},
+                "A": {"target": 222,222, "per_format": 111,111, "docs_needed": 27,778},
+                "B": {"target": 222,222, "per_format": 111,111, "docs_needed": 27,778},
                 ...
             }
         }

@@ -1,9 +1,7 @@
-"""Generator C: Reading Comprehension — passage-based formats (MC-4+Passage, MC-2+Passage)."""
-
-import random as _random
+"""Generator C: Reading Comprehension — passage-based format (MC-4+Passage)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4_PASSAGE, FORMAT_MC2_PASSAGE,
+    BaseGenerator, FORMAT_MC4_PASSAGE,
     render_mc, make_mc_choices, truncate_passage,
 )
 from src.post_training.generators.prompts import COMPREHENSION_PROMPT
@@ -47,26 +45,6 @@ class GenCComprehension(BaseGenerator):
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
-            ]
-
-        if fmt == FORMAT_MC2_PASSAGE:
-            if not source_chunk or not distractors:
-                return None
-            # Pick one distractor deterministically
-            rng = _random.Random(hash(question))
-            wrong_choice = rng.choice(distractors)
-            letters_2, choices_2, correct_2 = make_mc_choices(
-                correct_text, [wrong_choice], num_choices=2,
-                position_idx=next(self._mc_counters[fmt]),
-            )
-            passage = truncate_passage(source_chunk)
-            passage_question = (
-                f"Passage: {passage}\n\nQuestion: {question}"
-            )
-            user_msg = render_mc(passage_question, letters_2, choices_2)
-            return [
-                {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct_2},
             ]
 
         return None

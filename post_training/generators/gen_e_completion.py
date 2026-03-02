@@ -1,9 +1,7 @@
-"""Generator E: Sentence Completion — multi-format (MC-4, MC-2)."""
-
-import random as _random
+"""Generator E: Sentence Completion — multi-format (MC-4)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, FORMAT_MC2, render_mc, make_mc_choices,
+    BaseGenerator, FORMAT_MC4, render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import COMPLETION_PROMPT
 
@@ -38,21 +36,6 @@ class GenECompletion(BaseGenerator):
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
-            ]
-
-        if fmt == FORMAT_MC2:
-            if not distractors or not correct_text:
-                return None
-            rng = _random.Random(hash(context))
-            wrong_choice = rng.choice(distractors)
-            letters_2, choices_2, correct_2 = make_mc_choices(
-                correct_text, [wrong_choice], num_choices=2,
-                position_idx=next(self._mc_counters[fmt]),
-            )
-            user_msg = render_mc(context, letters_2, choices_2)
-            return [
-                {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": correct_2},
             ]
 
         return None

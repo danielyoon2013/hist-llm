@@ -38,27 +38,27 @@ GENERATOR_SPEC in config.py:
 Gen   Name              Formats                       Slots
 ───   ────              ───────                       ─────
 A     Factual QA        mc4, open                     2
-B     Chain-of-Thought  mc4, open, cot                3
-C     Comprehension     mc4_passage, mc2_passage      2
+B     Chain-of-Thought  mc4, cot                      2
+C     Comprehension     mc4_passage                   1
 D     Quantitative      open, cot                     2
-E     Completion        mc4, mc2                      2
+E     Completion        mc4                           1
 F     Instruct          mc4_passage                   1
-                                              Total: 12 slots
+                                              Total:  9 slots
 ```
 
 At `--target 1,000,000`:
 
 ```
-per_slot = 1,000,000 / 12 = 83,333
+per_slot = 1,000,000 / 9 = 111,111
 
-A: 83,333 x 2 = 166,666
-B: 83,333 x 3 = 249,999
-C: 83,333 x 2 = 166,666
-D: 83,333 x 2 = 166,666
-E: 83,333 x 2 = 166,666
-F: 83,333 x 1 =  83,333
+A: 111,111 x 2 = 222,222
+B: 111,111 x 2 = 222,222
+C: 111,111 x 1 = 111,111
+D: 111,111 x 2 = 222,222
+E: 111,111 x 1 = 111,111
+F: 111,111 x 1 = 111,111
                 ─────────
-         Total: 999,996  (+4 absorbed into A = 1,000,000)
+         Total: 999,999  (+1 absorbed into A = 1,000,000)
 ```
 
 ### From Target to Docs Needed
@@ -69,7 +69,7 @@ Each document is chunked (~2 chunks per doc at 6000 chars). Each chunk produces 
 items_per_doc = ITEMS_PER_CALL x CHUNKS_PER_DOC = 2 x 2 = 4
 
 docs_needed (per generator) = ceil(per_slot / items_per_doc)
-                             = ceil(83,333 / 4) = 20,834
+                             = ceil(111,111 / 4) = 27,778
 ```
 
 Each generator independently samples its own docs from `synthetic/input/`. All of this is computed by `compute_plan()` — you only specify `--target`.
@@ -84,17 +84,17 @@ Each generator independently samples its own docs from `synthetic/input/`. All o
 
 ---
 
-## The 6 Generators (12 Format Slots)
+## The 6 Generators (9 Format Slots)
 
 All generators are corpus-based — they read documents from `synthetic/input/` and produce training conversations grounded in historical text.
 
 | ID | Name | Formats | Benchmark Alignment | Items/Call |
 |----|------|---------|---------------------|-----------|
 | A | Factual QA | `mc4`, `open` | MMLU, ARC | 2 |
-| B | Chain-of-Thought | `mc4`, `open`, `cot` | ARC, GSM8K | 2 |
-| C | Reading Comprehension | `mc4_passage`, `mc2_passage` | RACE, BoolQ | 2 |
+| B | Chain-of-Thought | `mc4`, `cot` | ARC, GSM8K | 2 |
+| C | Reading Comprehension | `mc4_passage` | RACE | 2 |
 | D | Quantitative | `open`, `cot` | GSM8K | 2 |
-| E | Sentence Completion | `mc4`, `mc2` | HellaSwag, WinoGrande | 2 |
+| E | Historical Completion | `mc4` | HellaSwag | 2 |
 | F | Instruction Following | `mc4_passage` | RACE | 2 |
 
 ### Format Key
@@ -102,9 +102,7 @@ All generators are corpus-based — they read documents from `synthetic/input/` 
 | Format | Description | Eval Benchmarks |
 |--------|-------------|-----------------|
 | `mc4` | 4-choice MC | MMLU, ARC, HellaSwag |
-| `mc2` | 2-choice MC | PIQA, WinoGrande |
 | `mc4_passage` | Passage + 4-choice MC (RACE-style) | RACE |
-| `mc2_passage` | Passage + 2-choice MC (BoolQ-style) | BoolQ |
 | `open` | Open-ended Q&A | GSM8K (generative) |
 | `cot` | `<think>` reasoning + answer | GSM8K (with reasoning) |
 
@@ -184,10 +182,10 @@ python -m src.post_training.assemble --period 1900_1949 --dry-run  # preview onl
 
 Generation uses `gpt-4o-mini` via the OpenAI Batch API (50% discount).
 
-At 1M target with 12 format slots and ~20,834 docs per generator:
-- ~6 generators x ~20,834 docs x ~2 chunks = ~250,000 API calls
-- At ~$0.00075/call (Batch API average) = **~$185/period**
-- x 6 periods = **~$1,110 total**
+At 1M target with 9 format slots and ~27,778 docs per generator:
+- ~6 generators x ~27,778 docs x ~2 chunks = ~333,336 API calls
+- At ~$0.00075/call (Batch API average) = **~$250/period**
+- x 6 periods = **~$1,500 total**
 
 For testing, use `--target 120 --sync` (< $0.01).
 
@@ -221,10 +219,10 @@ post_training/
 │   ├── base.py                        # BaseGenerator: run(), batch submit/process, render_mc
 │   ├── prompts.py                     # 6 prompt templates (with distractor requests)
 │   ├── gen_a_factual.py               # A: Factual QA (mc4, open)
-│   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, open, cot)
-│   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4_passage, mc2_passage)
+│   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, cot)
+│   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4_passage)
 │   ├── gen_d_quantitative.py          # D: Quantitative / Math (open, cot)
-│   ├── gen_e_completion.py            # E: Sentence Completion (mc4, mc2)
+│   ├── gen_e_completion.py            # E: Sentence Completion (mc4)
 │   └── gen_f_instruct.py             # F: Instruction Following (mc4_passage)
 │
 ├── quality/                           # Quality pipeline (deferred for v1)
@@ -260,14 +258,11 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   │   ├── gen_a_factual_mc4.jsonl
 │   │   ├── gen_a_factual_open.jsonl
 │   │   ├── gen_b_cot_mc4.jsonl
-│   │   ├── gen_b_cot_open.jsonl
 │   │   ├── gen_b_cot_cot.jsonl
 │   │   ├── gen_c_comprehension_mc4_passage.jsonl
-│   │   ├── gen_c_comprehension_mc2_passage.jsonl
 │   │   ├── gen_d_quantitative_open.jsonl
 │   │   ├── gen_d_quantitative_cot.jsonl
 │   │   ├── gen_e_completion_mc4.jsonl
-│   │   ├── gen_e_completion_mc2.jsonl
 │   │   └── gen_f_instruct_mc4_passage.jsonl
 │   │
 │   └── batch_temp/                    # Batch API temporary files
@@ -299,6 +294,117 @@ All output files are in nanochat's **CustomJSON** format:
 [{"role":"user","content":"Multiple Choice question: ...\n- Option A=A\n- Option B=B\n..."},{"role":"assistant","content":"B"}]
 [{"role":"user","content":"Explain..."},{"role":"assistant","content":"<think>\nStep 1...\n</think>\nThe answer is..."}]
 ```
+
+---
+
+## Evaluation and Train/Test Strategy
+
+Our evaluation uses a 3-tier framework, with a train/test split designed to serve both training-loss monitoring and generator-level ablation.
+
+### Train/Test Split
+
+`assemble.py` splits all synthetic output into three files:
+
+| Output | Size | Purpose |
+|--------|-----:|---------|
+| `hist_synthetic_midtrain.jsonl` | ~1,000,000 | Mid-training: all synthetic examples |
+| `hist_synthetic_sft.jsonl` | 10,000 | SFT: 1% proportional subsample across generators |
+| `hist_synthetic_test.jsonl` | ~50,000 | 5% holdout for training-loss monitoring |
+
+The 5% test holdout is stratified by generator — each generator contributes 5% of its output to the test set. This means the test set reflects the same format/content distribution as the training data, enabling per-generator loss tracking.
+
+**What the test set is for:** Monitoring training loss (is the model learning from each generator's data?). It is NOT used for capability evaluation — that's what the external benchmarks below are for.
+
+**What the test set is NOT for:** Measuring whether the model "knows history" or "can reason." The test set is synthetic data in the same distribution as training; low loss just means the model fits our synthetic format, not that it's actually capable.
+
+### 3-Tier Evaluation Framework
+
+#### Tier 1: Core Capabilities (does the model work as a general LLM?)
+
+Standard benchmarks already implemented in nanochat. These measure fundamental LLM abilities and are used for cross-period comparison since they are temporally neutral.
+
+| Benchmark | Format | Size | What It Measures | Generator Alignment |
+|-----------|--------|-----:|------------------|---------------------|
+| MMLU | MC-4 | ~16K | Breadth of knowledge (57 subjects) | A (Factual) |
+| ARC-Challenge | MC-4 | 1,119 | Scientific reasoning | A, B (Reasoning) |
+| GSM8K | Open-ended | 7,473 | Multi-step math reasoning | D (Quantitative) + external GSM8K |
+| HellaSwag | MC-4 | ~40K | Commonsense / language modeling | E (Completion) |
+
+**MMLU and ARC caveat:** These contain post-period knowledge. We LAB-filter them per period, but the surviving subset size varies (e.g., ~6K for 1678-1849 vs. ~15K for 2010-2023). Cross-period accuracy comparisons on different-sized subsets are not apples-to-apples. Report as supplementary only.
+
+**GSM8K and HellaSwag** are temporally neutral (math doesn't change; commonsense doesn't change) — safe for direct cross-period comparison.
+
+#### Tier 2: Breadth Capabilities (does domain specialization hurt general ability?)
+
+Held-out benchmarks — NOT included in training data. Any score above random indicates transfer, not memorization.
+
+| Benchmark | Format | What It Measures | Generator Alignment |
+|-----------|--------|------------------|---------------------|
+| BoolQ | MC-2 + Passage | Boolean reasoning, reading comprehension | A, C |
+| PIQA | MC-2 | Physical intuition, common sense | E (Completion) |
+| WinoGrande | MC-2 | Coreference resolution | E (Completion) |
+| RACE | MC-4 + Passage | Long-passage comprehension | B, C, F |
+| SpellingBee | Generative | Lexical knowledge | — |
+| Dyck Language | Generative | Symbolic reasoning (bracket matching) | — |
+
+#### Tier 3: Diagnostic — Temporal Isolation (the core thesis)
+
+The most important tier. A model that scores well on Tiers 1-2 but fails Tier 3 has lookahead bias, defeating the project's purpose.
+
+| Metric | Format | Size | What It Measures | Target |
+|--------|--------|-----:|------------------|--------|
+| LAB Eval | MC-4 | 5,000/period | Post-period knowledge (should be at chance) | ~25% accuracy |
+| LAP Score | Scalar | — | `(LAB_accuracy - 0.25) / 0.75` | < 0.05 |
+
+**LAB Eval:** 5,000 MC questions per period about events that occurred AFTER the period's end year. Generated via GPT-4.1 across 10 domains (politics, technology, science, culture, sports, economics, medicine, space, environment, social movements). A perfectly isolated model scores 25% (random chance on 4-choice MC).
+
+**LAP Score interpretation:**
+
+| LAP | Meaning |
+|-----|---------|
+| 0.00 | Perfect isolation — random chance on future questions |
+| 0.00-0.05 | Minimal leakage — acceptable |
+| 0.05-0.15 | Moderate leakage — investigate source |
+| 0.15-0.30 | Significant leakage — temporal isolation compromised |
+| > 0.30 | Severe leakage — substantial future knowledge |
+
+### Generator-to-Evaluation Alignment
+
+Every generator targets specific benchmarks. This enables clean ablation studies: remove a generator, measure which benchmarks degrade.
+
+```
+                 Tier 1 (Core)         Tier 2 (Breadth)      Tier 3
+                 MMLU ARC GSM8K Hella  BoolQ PIQA Wino RACE  LAB
+Gen A (Factual)  **   **               *
+Gen B (CoT)           *                               **
+Gen C (Compreh)                        *               **
+Gen D (Quantit)            **
+Gen E (Complet)                  **          *    *
+Gen F (Instruct)                                      .
+External: GSM8K             **
+External: MATH              *
+
+** = primary   * = secondary   . = indirect
+```
+
+### When to Evaluate
+
+| Training Stage | What to Evaluate | Purpose |
+|----------------|------------------|---------|
+| After base training | Tier 1 + LAB Eval | Baseline + temporal isolation check |
+| After mid-training | Tier 1 + Tier 2 + LAB Eval | Did mid-training help or hurt? |
+| After SFT | All 3 tiers | Full evaluation of final model |
+
+### Results Template
+
+| Period | MMLU | ARC-C | GSM8K | HellaSwag | BoolQ | PIQA | WinoGr | RACE | LAB | LAP |
+|--------|------|-------|-------|-----------|-------|------|--------|------|-----|-----|
+| 1678_1849 | | | | | | | | | | |
+| 1850_1899 | | | | | | | | | | |
+| 1900_1949 | | | | | | | | | | |
+| 1950_1999 | | | | | | | | | | |
+| 2000_2009 | | | | | | | | | | |
+| 2010_2023 | | | | | | | | | | |
 
 ---
 
