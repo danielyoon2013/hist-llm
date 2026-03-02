@@ -2,10 +2,13 @@
 Assemble synthetic data into nanochat-ready training files.
 
 Reads per-generator JSONL from quality/deduped/ (or by_generator/),
-produces three output files:
-  1. hist_synthetic_midtrain.jsonl  — all examples (1M target)
+performs a DOCUMENT-LEVEL train/test split, and produces:
+  1. hist_synthetic_midtrain.jsonl  — all training examples (all formats)
   2. hist_synthetic_sft.jsonl       — proportional subsample (10K target)
-  3. hist_synthetic_test.jsonl      — 5% holdout for training-loss monitoring
+  3. hist_synthetic_test.jsonl      — MC-only holdout from held-out documents
+
+Document-level split ensures no content leakage: test questions come from
+documents never seen during training (in any format).
 
 Usage:
     python -m src.post_training.assemble --period 1900_1949
@@ -24,6 +27,9 @@ from src.post_training.utils import read_jsonl, write_jsonl
 
 
 SEED = 42
+
+# MC format keys — only these go into the test split
+MC_FORMATS = {"mc4", "mc4_passage"}
 
 
 def find_input_dir(paths):
@@ -47,6 +53,7 @@ def load_all_generators(input_dir):
     """Load all generator JSONL files from a directory.
 
     Returns dict mapping generator_name -> list of conversations.
+    Each conversation may be a bare list (legacy) or dict with metadata.
     """
     data = {}
     for jsonl_file in sorted(Path(input_dir).glob("*.jsonl")):
@@ -57,38 +64,50 @@ def load_all_generators(input_dir):
     return data
 
 
-def proportional_subsample(generator_data, target_size, exclude_prefixes=(), seed=SEED):
+def _extract_messages(conv):
+    """Extract bare message list from a conversation (handles both formats)."""
+    if isinstance(conv, dict):
+        return conv["messages"]
+    return conv
+
+
+def _extract_doc_name(conv):
+    """Extract doc_name from a conversation (returns 'unknown' for legacy format)."""
+    if isinstance(conv, dict):
+        return conv.get("doc_name", "unknown")
+    return "unknown"
+
+
+def _extract_format(conv):
+    """Extract format key from a conversation."""
+    if isinstance(conv, dict):
+        return conv.get("format", "")
+    return ""
+
+
+def proportional_subsample(generator_data, target_size, seed=SEED):
     """Subsample proportionally from each generator to hit target_size.
 
     Args:
-        generator_data: dict of {gen_name: [conversations]}
+        generator_data: dict of {gen_name: [messages_lists]}
         target_size: total examples to sample
-        exclude_prefixes: generator name prefixes to skip (e.g. train-only gens)
         seed: random seed
 
     Returns:
-        list of sampled conversations (shuffled)
+        list of sampled message lists (shuffled)
     """
     rng = random.Random(seed)
 
-    # Filter to eligible generators
-    eligible = {
-        name: convs for name, convs in generator_data.items()
-        if not any(name.startswith(p) for p in exclude_prefixes)
-    }
-
-    total_eligible = sum(len(c) for c in eligible.values())
+    total_eligible = sum(len(c) for c in generator_data.values())
     if total_eligible == 0:
         return []
 
-    # Compute per-generator sample sizes (proportional)
     samples = []
     remaining = target_size
-    gen_items = sorted(eligible.items())  # deterministic order
+    gen_items = sorted(generator_data.items())
 
     for i, (name, convs) in enumerate(gen_items):
         if i == len(gen_items) - 1:
-            # Last generator gets the remainder to hit exact target
             n = remaining
         else:
             n = round(target_size * len(convs) / total_eligible)
@@ -105,22 +124,21 @@ def proportional_subsample(generator_data, target_size, exclude_prefixes=(), see
 
 def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
              sft_size=DEFAULT_SFT_SIZE, dry_run=False):
-    """Assemble synthetic data for a period.
+    """Assemble synthetic data for a period with document-level train/test split.
+
+    Split strategy:
+      - 95% of unique documents → TRAIN (all formats: mc, open, cot, passage)
+      - 5% of unique documents → TEST (MC formats only, with letters for eval)
+
+    This ensures:
+      - No content leakage between train and test
+      - Format diversity in training data
+      - MC-only test set for fast categorical evaluation
 
     Produces three output files in final/:
-      - hist_synthetic_midtrain.jsonl  (all examples for mid-training)
-      - hist_synthetic_sft.jsonl       (proportional subsample for SFT)
-      - hist_synthetic_test.jsonl      (holdout for monitoring)
-
-    Args:
-        period: Period key
-        source: Override input directory ("deduped", "validated", "raw", or a path)
-        test_ratio: Fraction for test split (monitoring only)
-        sft_size: Number of SFT examples (proportional subsample)
-        dry_run: Show plan without writing
-
-    Returns:
-        dict with assembly stats
+      - train/hist_synthetic_midtrain.jsonl  (all train examples, all formats)
+      - train/hist_synthetic_sft.jsonl       (proportional subsample for SFT)
+      - test/hist_synthetic_test.jsonl       (MC-only from held-out documents)
     """
     paths = get_paths(period)
     train_dir = paths["final_train_dir"]
@@ -144,7 +162,7 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
 
     print(f"Period: {period}")
     print(f"Input:  {input_dir}")
-    print(f"Output: {train_dir}")
+    print(f"Output: train={train_dir}, test={test_dir}")
     print(f"SFT size: {sft_size:,}")
     print(f"Test ratio: {test_ratio}")
     if dry_run:
@@ -157,52 +175,92 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
         return {}
 
     print(f"\nLoaded {len(generator_data)} generator files:")
+    total_all = 0
     for name, convs in sorted(generator_data.items()):
         print(f"  {name}: {len(convs):,} conversations")
+        total_all += len(convs)
 
-    # Merge all generators
-    all_convs = []
+    # ------------------------------------------------------------------
+    # Document-level split
+    # ------------------------------------------------------------------
+
+    # Collect unique doc_names across all generators
+    doc_names = set()
     for convs in generator_data.values():
-        all_convs.extend(convs)
+        for conv in convs:
+            doc_names.add(_extract_doc_name(conv))
 
-    total_all = len(all_convs)
-    print(f"\nTotal: {total_all:,} conversations")
-
-    # Train/test split
+    doc_list = sorted(doc_names)
     rng = random.Random(SEED)
-    indices = list(range(total_all))
-    rng.shuffle(indices)
-    test_size = max(1, int(total_all * test_ratio))
-    test_indices = set(indices[:test_size])
+    rng.shuffle(doc_list)
 
-    test = [all_convs[i] for i in range(total_all) if i in test_indices]
-    train = [all_convs[i] for i in range(total_all) if i not in test_indices]
+    test_doc_count = max(1, int(len(doc_list) * test_ratio))
+    test_docs = set(doc_list[:test_doc_count])
+    train_docs = set(doc_list[test_doc_count:])
 
-    # Mid-train = all train examples
-    midtrain = list(train)
+    print(f"\nDocuments: {len(doc_list)} unique")
+    print(f"  Train docs: {len(train_docs)}")
+    print(f"  Test docs:  {len(test_docs)}")
+
+    # ------------------------------------------------------------------
+    # Split conversations by document assignment
+    # ------------------------------------------------------------------
+
+    train_by_gen = defaultdict(list)   # gen_filename -> [bare_messages]
+    test_convs = []                    # [{messages, letters}] for eval
+
+    train_count = 0
+    test_count = 0
+    test_skipped_non_mc = 0
+
+    for gen_name, convs in generator_data.items():
+        for conv in convs:
+            doc = _extract_doc_name(conv)
+            fmt = _extract_format(conv)
+            messages = _extract_messages(conv)
+
+            if doc in test_docs:
+                if fmt in MC_FORMATS:
+                    test_convs.append({
+                        "messages": messages,
+                        "letters": ["A", "B", "C", "D"],
+                    })
+                    test_count += 1
+                else:
+                    test_skipped_non_mc += 1
+            else:
+                # Train: bare message lists for nanochat
+                train_by_gen[gen_name].append(messages)
+                train_count += 1
+
+    # ------------------------------------------------------------------
+    # Build output sets
+    # ------------------------------------------------------------------
+
+    # Midtrain = all train convs shuffled
+    midtrain = []
+    for convs in train_by_gen.values():
+        midtrain.extend(convs)
     rng2 = random.Random(SEED + 1)
     rng2.shuffle(midtrain)
 
-    # SFT = proportional subsample from train data only (avoids test contamination)
-    test_ids = set(id(c) for c in test)
-    train_by_gen = {}
-    for name, convs in generator_data.items():
-        train_convs = [c for c in convs if id(c) not in test_ids]
-        if train_convs:
-            train_by_gen[name] = train_convs
+    # SFT = proportional subsample from train
+    sft = proportional_subsample(train_by_gen, sft_size, seed=SEED + 2)
 
-    sft = proportional_subsample(
-        train_by_gen, sft_size,
-        seed=SEED + 2,
-    )
+    # Shuffle test
+    rng3 = random.Random(SEED + 3)
+    rng3.shuffle(test_convs)
 
-    total = len(midtrain) + len(test)
-    print(f"\nTotal: {total:,}")
-    print(f"  Mid-train: {len(midtrain):,}")
-    print(f"  SFT:       {len(sft):,}")
-    print(f"  Test:      {len(test):,}")
+    print(f"\nSplit results:")
+    print(f"  Mid-train: {len(midtrain):,} (all formats from train docs)")
+    print(f"  SFT:       {len(sft):,} (proportional subsample)")
+    print(f"  Test:      {len(test_convs):,} (MC-only from test docs)")
+    print(f"  Discarded: {test_skipped_non_mc:,} (non-MC from test docs)")
 
+    # ------------------------------------------------------------------
     # Write output files
+    # ------------------------------------------------------------------
+
     if not dry_run:
         os.makedirs(train_dir, exist_ok=True)
         os.makedirs(test_dir, exist_ok=True)
@@ -213,7 +271,7 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
 
         write_jsonl(midtrain, str(midtrain_path), validate=False)
         write_jsonl(sft, str(sft_path), validate=False)
-        write_jsonl(test, str(test_path), validate=False)
+        write_jsonl(test_convs, str(test_path), validate=False)
 
         print(f"\nWritten:")
         print(f"  {midtrain_path}")
@@ -223,23 +281,31 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
     stats = {
         "input_dir": str(input_dir),
         "generators": {name: len(convs) for name, convs in generator_data.items()},
-        "total": total,
+        "documents": len(doc_list),
+        "train_docs": len(train_docs),
+        "test_docs": len(test_docs),
         "midtrain": len(midtrain),
         "sft": len(sft),
-        "test": len(test),
+        "test": len(test_convs),
+        "test_skipped_non_mc": test_skipped_non_mc,
     }
 
     # Summary table
     print(f"\n{'='*60}")
-    print(f"{'Generator':<30} {'Count':>10}")
+    print(f"{'Generator':<35} {'Train':>8} {'Test':>8}")
     print(f"{'-'*60}")
-    for name, count in sorted(stats["generators"].items()):
-        print(f"{name:<30} {count:>10,}")
+    gen_test_counts = defaultdict(int)
+    for conv in test_convs:
+        # Count by format for test
+        gen_test_counts["test_mc"] += 1
+
+    for name in sorted(generator_data.keys()):
+        train_n = len(train_by_gen.get(name, []))
+        print(f"{name:<35} {train_n:>8,}")
     print(f"{'-'*60}")
-    print(f"{'TOTAL':<30} {total:>10,}")
-    print(f"{'Mid-train':<30} {len(midtrain):>10,}")
-    print(f"{'SFT':<30} {len(sft):>10,}")
-    print(f"{'Test':<30} {len(test):>10,}")
+    print(f"{'TRAIN TOTAL':<35} {len(midtrain):>8,}")
+    print(f"{'SFT (subsample)':<35} {len(sft):>8,}")
+    print(f"{'TEST (MC from held-out docs)':<35} {'':>8} {len(test_convs):>8,}")
 
     return stats
 

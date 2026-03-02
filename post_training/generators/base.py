@@ -336,7 +336,11 @@ class BaseGenerator(ABC):
         return output_paths
 
     def _process_task(self, task):
-        """Process a single chunk. Returns {fmt: [conversations]}."""
+        """Process a single chunk. Returns {fmt: [conversations]}.
+
+        Each conversation is wrapped with metadata for document-level splitting:
+        {"messages": [...], "doc_name": ..., "chunk_idx": ..., "generator": ..., "format": ...}
+        """
         client, doc_name, chunk_idx, chunk, period, start_year, end_year = task
 
         prompt = self.build_prompt(chunk, period, start_year, end_year)
@@ -354,7 +358,14 @@ class BaseGenerator(ABC):
                     continue
                 valid, err = validate_conversation(conv)
                 if valid:
-                    results.setdefault(fmt, []).append(conv)
+                    wrapped = {
+                        "messages": conv,
+                        "doc_name": doc_name,
+                        "chunk_idx": chunk_idx,
+                        "generator": self.name,
+                        "format": fmt,
+                    }
+                    results.setdefault(fmt, []).append(wrapped)
         return results
 
     def _run_metadata_based(self, client, period, start_year, end_year,
@@ -447,7 +458,7 @@ class BaseGenerator(ABC):
                 for chunk_idx, chk in enumerate(chunks):
                     cid = f"{self.name}_{doc_idx}_{chunk_idx}"
                     prompt = self.build_prompt(chk, period, start_year, end_year)
-                    tasks.append((cid, prompt, chk))
+                    tasks.append((cid, prompt, chk, doc_name, chunk_idx))
         else:
             tasks = self._build_metadata_tasks(
                 period, start_year, end_year, target_examples,
@@ -460,18 +471,25 @@ class BaseGenerator(ABC):
         total = len(tasks)
         print(f"Submitting {total:,} batch requests")
 
-        # Write manifest (custom_id -> chunk_text for passage generators)
+        # Write manifest (custom_id -> chunk/doc metadata)
         manifest_path = batch_dir / f"{self.name}_manifest.jsonl"
         with open(manifest_path, "w", encoding="utf-8") as f:
-            for cid, _, chunk_val in tasks:
+            for task_tuple in tasks:
+                cid = task_tuple[0]
+                chunk_val = task_tuple[2]
                 entry = {"custom_id": cid}
                 if chunk_val is not None:
                     entry["chunk_text"] = chunk_val
+                # Corpus tasks have (cid, prompt, chunk, doc_name, chunk_idx)
+                if len(task_tuple) >= 5:
+                    entry["doc_name"] = task_tuple[3]
+                    entry["chunk_idx"] = task_tuple[4]
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
         # Write batch request file
         requests = []
-        for cid, prompt, _ in tasks:
+        for task_tuple in tasks:
+            cid, prompt = task_tuple[0], task_tuple[1]
             requests.append({
                 "custom_id": cid,
                 "messages": [{"role": "user", "content": prompt}],
@@ -547,14 +565,18 @@ class BaseGenerator(ABC):
             print(f"Batch not complete yet")
             return None
 
-        # Load manifest (custom_id -> chunk_text)
+        # Load manifest (custom_id -> {chunk_text, doc_name, chunk_idx})
         manifest = {}
         manifest_path = batch_dir / f"{self.name}_manifest.jsonl"
         if manifest_path.exists():
             with open(manifest_path, "r", encoding="utf-8") as f:
                 for line in f:
                     entry = json.loads(line.strip())
-                    manifest[entry["custom_id"]] = entry.get("chunk_text")
+                    manifest[entry["custom_id"]] = {
+                        "chunk_text": entry.get("chunk_text"),
+                        "doc_name": entry.get("doc_name", "unknown"),
+                        "chunk_idx": entry.get("chunk_idx", 0),
+                    }
 
         # Build output paths
         output_paths = {
@@ -578,7 +600,8 @@ class BaseGenerator(ABC):
                 continue
 
             items = self.parse_response(response)
-            chunk_val = manifest.get(custom_id)
+            meta = manifest.get(custom_id, {})
+            chunk_val = meta.get("chunk_text") if isinstance(meta, dict) else meta
 
             for item in items:
                 for fmt in self.SUPPORTED_FORMATS:
@@ -587,7 +610,14 @@ class BaseGenerator(ABC):
                         continue
                     valid, _ = validate_conversation(conv)
                     if valid:
-                        all_results[fmt].append(conv)
+                        wrapped = {
+                            "messages": conv,
+                            "doc_name": meta.get("doc_name", "unknown") if isinstance(meta, dict) else "unknown",
+                            "chunk_idx": meta.get("chunk_idx", 0) if isinstance(meta, dict) else 0,
+                            "generator": self.name,
+                            "format": fmt,
+                        }
+                        all_results[fmt].append(wrapped)
             parsed_ok += 1
 
         # Write output files

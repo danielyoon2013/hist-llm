@@ -94,8 +94,7 @@ Source text:
 
 # ---------------------------------------------------------------------------
 # Generator D: Quantitative (from text with numbers)
-# Formats: Open-ended, CoT
-# No distractors needed — only generative formats
+# Formats: MC-4, Open-ended, CoT
 # ---------------------------------------------------------------------------
 
 QUANTITATIVE_PROMPT = """Create {num_items} math word problems inspired by the numerical data in this text.
@@ -107,9 +106,11 @@ Requirements:
 4. Problems should be grounded in the historical context of the text
 5. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
 6. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: one percentage change, one ratio, one difference, etc.
+7. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
+8. CRITICAL — Distractors must be the same format as the correct answer (e.g., if the answer is a number, distractors must be numbers). Make distractors plausible by using common arithmetic mistakes (off-by-one, wrong operation, rounding errors).
 
 Return a JSON object:
-{{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units."}}]}}
+{{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units.", "distractors": ["The average annual increase was V units.", "The average annual increase was U units.", "The average annual increase was T units."]}}]}}
 
 Text:
 {text}"""

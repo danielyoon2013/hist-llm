@@ -113,8 +113,8 @@ DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
 # Allocation is purely determined by format count: each format slot gets
 # an equal share of the target. No manual percentages to maintain.
 #
-# At 1M target with 9 total format slots:
-#   per_slot = 111,111  →  A(2)=222,222  B(2)=222,222  ...  F(1)=111,111
+# At 1M target with 10 total format slots:
+#   per_slot = 100,000  →  A(2)=200,000  B(2)=200,000  D(3)=300,000  ...  F(1)=100,000
 #
 # All generators are corpus-based (need document text).
 
@@ -125,7 +125,7 @@ GENERATOR_SPEC = {
     "A": {"formats": ("mc4", "open"),        "corpus": True},
     "B": {"formats": ("mc4", "cot"),         "corpus": True},   # removed "open" (redundant — cot already contains the answer)
     "C": {"formats": ("mc4_passage",),       "corpus": True},   # removed "mc2_passage" (artificial 2-choice reduction)
-    "D": {"formats": ("open", "cot"),        "corpus": True},
+    "D": {"formats": ("mc4", "open", "cot"), "corpus": True},
     "E": {"formats": ("mc4",),              "corpus": True},   # removed "mc2" (discards 2 distractors from mc4)
     "F": {"formats": ("mc4_passage",),       "corpus": True},
 }

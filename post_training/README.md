@@ -40,25 +40,25 @@ Gen   Name              Formats                       Slots
 A     Factual QA        mc4, open                     2
 B     Chain-of-Thought  mc4, cot                      2
 C     Comprehension     mc4_passage                   1
-D     Quantitative      open, cot                     2
+D     Quantitative      mc4, open, cot                3
 E     Completion        mc4                           1
 F     Instruct          mc4_passage                   1
-                                              Total:  9 slots
+                                              Total: 10 slots
 ```
 
 At `--target 1,000,000`:
 
 ```
-per_slot = 1,000,000 / 9 = 111,111
+per_slot = 1,000,000 / 10 = 100,000
 
-A: 111,111 x 2 = 222,222
-B: 111,111 x 2 = 222,222
-C: 111,111 x 1 = 111,111
-D: 111,111 x 2 = 222,222
-E: 111,111 x 1 = 111,111
-F: 111,111 x 1 = 111,111
+A: 100,000 x 2 = 200,000
+B: 100,000 x 2 = 200,000
+C: 100,000 x 1 = 100,000
+D: 100,000 x 3 = 300,000
+E: 100,000 x 1 = 100,000
+F: 100,000 x 1 = 100,000
                 ─────────
-         Total: 999,999  (+1 absorbed into A = 1,000,000)
+         Total: 1,000,000
 ```
 
 ### From Target to Docs Needed
@@ -69,7 +69,7 @@ Each document is chunked (~2 chunks per doc at 6000 chars). Each chunk produces 
 items_per_doc = ITEMS_PER_CALL x CHUNKS_PER_DOC = 2 x 2 = 4
 
 docs_needed (per generator) = ceil(per_slot / items_per_doc)
-                             = ceil(111,111 / 4) = 27,778
+                             = ceil(100,000 / 4) = 25,000
 ```
 
 Each generator independently samples its own docs from `synthetic/input/`. All of this is computed by `compute_plan()` — you only specify `--target`.
@@ -78,22 +78,22 @@ Each generator independently samples its own docs from `synthetic/input/`. All o
 
 | Output | Size | Description |
 |--------|-----:|-------------|
-| Mid-train | 1,000,000 | All synthetic examples |
-| SFT | 10,000 | 1% proportional subsample |
-| Test | ~50,000 | 5% holdout for training-loss monitoring |
+| Mid-train | ~950,000 | All formats from 95% of docs |
+| SFT | 10,000 | 1% proportional subsample from train |
+| Test | ~50,000 | MC-only from 5% held-out docs |
 
 ---
 
-## The 6 Generators (9 Format Slots)
+## The 6 Generators (10 Format Slots)
 
 All generators are corpus-based — they read documents from `synthetic/input/` and produce training conversations grounded in historical text.
 
 | ID | Name | Formats | Benchmark Alignment | Items/Call |
 |----|------|---------|---------------------|-----------|
-| A | Factual QA | `mc4`, `open` | MMLU, ARC | 2 |
-| B | Chain-of-Thought | `mc4`, `cot` | ARC, GSM8K | 2 |
+| A | Factual QA | `mc4`, `open` | ARC | 2 |
+| B | Chain-of-Thought | `mc4`, `cot` | ARC | 2 |
 | C | Reading Comprehension | `mc4_passage` | RACE | 2 |
-| D | Quantitative | `open`, `cot` | GSM8K | 2 |
+| D | Quantitative | `mc4`, `open`, `cot` | — | 2 |
 | E | Historical Completion | `mc4` | HellaSwag | 2 |
 | F | Instruction Following | `mc4_passage` | RACE | 2 |
 
@@ -157,14 +157,14 @@ python -m src.post_training.generate submit --period 1900_1949 --generators A B 
 
 **Output:** `synthetic/by_generator/gen_{name}_{fmt}.jsonl`
 
-Each line is a nanochat CustomJSON conversation:
+Each line is a metadata-wrapped conversation (for document-level splitting):
 ```jsonl
-[{"role":"user","content":"What caused...?"},{"role":"assistant","content":"The main cause..."}]
+{"messages":[{"role":"user","content":"..."},{"role":"assistant","content":"..."}],"doc_name":"collection/doc_00001","chunk_idx":0,"generator":"gen_a_factual","format":"mc4"}
 ```
 
-### Step 3: Assemble
+### Step 3: Assemble (Document-Level Train/Test Split)
 
-Merges all generator outputs into three files:
+Performs a **document-level** split: 95% of unique documents → train (all formats), 5% → test (MC-only). No content leakage between train and test.
 
 ```bash
 python -m src.post_training.assemble --period 1900_1949 --source raw
@@ -172,9 +172,9 @@ python -m src.post_training.assemble --period 1900_1949 --dry-run  # preview onl
 ```
 
 **Output:**
-- `final/train/hist_synthetic_midtrain.jsonl` — all examples (1M)
+- `final/train/hist_synthetic_midtrain.jsonl` — all train examples, all formats (bare message lists)
 - `final/train/hist_synthetic_sft.jsonl` — 10K proportional subsample
-- `final/test/hist_synthetic_test.jsonl` — 5% holdout
+- `final/test/hist_synthetic_test.jsonl` — MC-only from held-out docs (with `letters` field for eval)
 
 ---
 
@@ -182,10 +182,10 @@ python -m src.post_training.assemble --period 1900_1949 --dry-run  # preview onl
 
 Generation uses `gpt-4o-mini` via the OpenAI Batch API (50% discount).
 
-At 1M target with 9 format slots and ~27,778 docs per generator:
-- ~6 generators x ~27,778 docs x ~2 chunks = ~333,336 API calls
-- At ~$0.00075/call (Batch API average) = **~$250/period**
-- x 6 periods = **~$1,500 total**
+At 1M target with 10 format slots and ~25,000 docs per generator:
+- ~6 generators x ~25,000 docs x ~2 chunks = ~300,000 API calls
+- At ~$0.00075/call (Batch API average) = **~$225/period**
+- x 6 periods = **~$1,350 total**
 
 For testing, use `--target 120 --sync` (< $0.01).
 
@@ -221,7 +221,7 @@ post_training/
 │   ├── gen_a_factual.py               # A: Factual QA (mc4, open)
 │   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, cot)
 │   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4_passage)
-│   ├── gen_d_quantitative.py          # D: Quantitative / Math (open, cot)
+│   ├── gen_d_quantitative.py          # D: Quantitative / Math (mc4, open, cot)
 │   ├── gen_e_completion.py            # E: Sentence Completion (mc4)
 │   └── gen_f_instruct.py             # F: Instruction Following (mc4_passage)
 │
@@ -260,6 +260,7 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   │   ├── gen_b_cot_mc4.jsonl
 │   │   ├── gen_b_cot_cot.jsonl
 │   │   ├── gen_c_comprehension_mc4_passage.jsonl
+│   │   ├── gen_d_quantitative_mc4.jsonl
 │   │   ├── gen_d_quantitative_open.jsonl
 │   │   ├── gen_d_quantitative_cot.jsonl
 │   │   ├── gen_e_completion_mc4.jsonl
@@ -273,10 +274,10 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │
 ├── final/
 │   ├── train/                         # Final train splits (Step 3: assemble.py)
-│   │   ├── hist_synthetic_midtrain.jsonl  # All synthetic (1M target)
+│   │   ├── hist_synthetic_midtrain.jsonl  # All formats from train docs (~950K)
 │   │   └── hist_synthetic_sft.jsonl       # 1% proportional subsample (10K)
 │   └── test/
-│       └── hist_synthetic_test.jsonl      # 5% holdout
+│       └── hist_synthetic_test.jsonl      # MC-only from held-out docs (~50K)
 │
 └── quality/                           # Quality pipeline outputs (deferred for v1)
     ├── validated/
@@ -287,125 +288,87 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 
 ## nanochat Integration
 
-All output files are in nanochat's **CustomJSON** format:
+**Training files** (`midtrain`, `sft`) use nanochat's **CustomJSON** format (bare message lists):
 
 ```jsonl
 [{"role":"user","content":"What caused...?"},{"role":"assistant","content":"The main cause..."}]
-[{"role":"user","content":"Multiple Choice question: ...\n- Option A=A\n- Option B=B\n..."},{"role":"assistant","content":"B"}]
-[{"role":"user","content":"Explain..."},{"role":"assistant","content":"<think>\nStep 1...\n</think>\nThe answer is..."}]
+[{"role":"user","content":"Multiple Choice question: ...\n- choice=A\n- choice=B\n..."},{"role":"assistant","content":"B"}]
 ```
+
+**Test file** uses nanochat's **categorical eval** format (matches LABEval):
+
+```jsonl
+{"messages":[{"role":"user","content":"Multiple Choice question: ..."},{"role":"assistant","content":"B"}],"letters":["A","B","C","D"]}
+```
+
+Load as a custom eval task (same pattern as `tasks/lab_eval.py`).
 
 ---
 
 ## Evaluation and Train/Test Strategy
 
-Our evaluation uses a 3-tier framework, with a train/test split designed to serve both training-loss monitoring and generator-level ablation.
+### Document-Level Train/Test Split
 
-### Train/Test Split
+`assemble.py` performs a **document-level split** — 95% of unique documents go to train (all formats), 5% go to test (MC-only). This ensures zero content leakage between train and test.
 
-`assemble.py` splits all synthetic output into three files:
+| Output | Size | Format | Purpose |
+|--------|-----:|--------|---------|
+| `hist_synthetic_midtrain.jsonl` | ~950K | All formats (mc4, open, cot, passage) | Mid-training |
+| `hist_synthetic_sft.jsonl` | 10,000 | Proportional subsample from train | SFT |
+| `hist_synthetic_test.jsonl` | ~50K | MC-only (`mc4`, `mc4_passage`) | Categorical eval |
 
-| Output | Size | Purpose |
-|--------|-----:|---------|
-| `hist_synthetic_midtrain.jsonl` | ~1,000,000 | Mid-training: all synthetic examples |
-| `hist_synthetic_sft.jsonl` | 10,000 | SFT: 1% proportional subsample across generators |
-| `hist_synthetic_test.jsonl` | ~50,000 | 5% holdout for training-loss monitoring |
+**Why document-level?** If the same chunk produces both `open` and `mc4` formats, putting `open` in train and `mc4` in test creates content leakage — the model has seen the answer during training. By splitting at the document level, test questions come from documents the model has never seen in any format.
 
-The 5% test holdout is stratified by generator — each generator contributes 5% of its output to the test set. This means the test set reflects the same format/content distribution as the training data, enabling per-generator loss tracking.
+**Why MC-only test?** nanochat's categorical eval is fast (batched logit comparison, no sampling). This enables evaluation every N training steps without significant overhead. Non-MC formats from test documents are discarded (~5% waste).
 
-**What the test set is for:** Monitoring training loss (is the model learning from each generator's data?). It is NOT used for capability evaluation — that's what the external benchmarks below are for.
+**Format diversity in training:** Train documents contribute ALL formats (mc4, open, cot, mc4_passage). This ensures the model learns diverse response patterns during mid-training and SFT.
 
-**What the test set is NOT for:** Measuring whether the model "knows history" or "can reason." The test set is synthetic data in the same distribution as training; low loss just means the model fits our synthetic format, not that it's actually capable.
+### 3-Source Evaluation
 
-### 3-Tier Evaluation Framework
+We evaluate with three sources, each testing a different axis:
 
-#### Tier 1: Core Capabilities (does the model work as a general LLM?)
+#### Source 1: Internal MC Test Split (did the model learn historical content?)
 
-Standard benchmarks already implemented in nanochat. These measure fundamental LLM abilities and are used for cross-period comparison since they are temporally neutral.
+Our `hist_synthetic_test.jsonl` — MC questions from held-out documents. Loaded as a categorical task in nanochat (same format as LABEval).
 
-| Benchmark | Format | Size | What It Measures | Generator Alignment |
-|-----------|--------|-----:|------------------|---------------------|
-| MMLU | MC-4 | ~16K | Breadth of knowledge (57 subjects) | A (Factual) |
-| ARC-Challenge | MC-4 | 1,119 | Scientific reasoning | A, B (Reasoning) |
-| GSM8K | Open-ended | 7,473 | Multi-step math reasoning | D (Quantitative) + external GSM8K |
-| HellaSwag | MC-4 | ~40K | Commonsense / language modeling | E (Completion) |
+#### Source 2: External Benchmarks (does the model retain general capabilities?)
 
-**MMLU and ARC caveat:** These contain post-period knowledge. We LAB-filter them per period, but the surviving subset size varies (e.g., ~6K for 1678-1849 vs. ~15K for 2010-2023). Cross-period accuracy comparisons on different-sized subsets are not apples-to-apples. Report as supplementary only.
+Time-invariant benchmarks already in nanochat. These monitor catastrophic forgetting — scores should stay stable during training, not necessarily improve.
 
-**GSM8K and HellaSwag** are temporally neutral (math doesn't change; commonsense doesn't change) — safe for direct cross-period comparison.
+| Benchmark | Format | Contamination | What It Tests | In nanochat? |
+|-----------|--------|--------------|---------------|-------------|
+| ARC-Challenge | MC-4 | ~2% | Science reasoning | Yes |
+| HellaSwag | MC-4 | Low (est.) | Commonsense completion | Yes |
+| RACE-Middle | MC-4 + Passage | Low (est.) | Reading comprehension | Yes |
+| RACE-High | MC-4 + Passage | Low (est.) | Reading comprehension | Yes |
+| Winogrande | MC-2 | Low (est.) | Coreference resolution | Yes |
 
-#### Tier 2: Breadth Capabilities (does domain specialization hurt general ability?)
+**Why not MMLU?** 34.6% LAB contamination (1950-1999 period). Too much post-period knowledge to serve as a time-invariant benchmark.
 
-Held-out benchmarks — NOT included in training data. Any score above random indicates transfer, not memorization.
+**Why not GSM8K?** It's generative eval (sequential sampling) — too slow for frequent training-interval evaluation. Our Gen D MC4 format covers math reasoning in the internal test split.
 
-| Benchmark | Format | What It Measures | Generator Alignment |
-|-----------|--------|------------------|---------------------|
-| BoolQ | MC-2 + Passage | Boolean reasoning, reading comprehension | A, C |
-| PIQA | MC-2 | Physical intuition, common sense | E (Completion) |
-| WinoGrande | MC-2 | Coreference resolution | E (Completion) |
-| RACE | MC-4 + Passage | Long-passage comprehension | B, C, F |
-| SpellingBee | Generative | Lexical knowledge | — |
-| Dyck Language | Generative | Symbolic reasoning (bracket matching) | — |
+#### Source 3: LAB Eval (temporal isolation — the core thesis)
 
-#### Tier 3: Diagnostic — Temporal Isolation (the core thesis)
+5,000 MC questions per period about events AFTER the period's end year. A perfectly isolated model scores 25% (random chance).
 
-The most important tier. A model that scores well on Tiers 1-2 but fails Tier 3 has lookahead bias, defeating the project's purpose.
+| Metric | Target | Meaning |
+|--------|--------|---------|
+| LAB accuracy | ~25% | Random chance = no future knowledge |
+| LAP score | < 0.05 | `(LAB_acc - 0.25) / 0.75` — 0 is perfect |
 
-| Metric | Format | Size | What It Measures | Target |
-|--------|--------|-----:|------------------|--------|
-| LAB Eval | MC-4 | 5,000/period | Post-period knowledge (should be at chance) | ~25% accuracy |
-| LAP Score | Scalar | — | `(LAB_accuracy - 0.25) / 0.75` | < 0.05 |
+### Evaluation Schedule
 
-**LAB Eval:** 5,000 MC questions per period about events that occurred AFTER the period's end year. Generated via GPT-4.1 across 10 domains (politics, technology, science, culture, sports, economics, medicine, space, environment, social movements). A perfectly isolated model scores 25% (random chance on 4-choice MC).
+All three sources use categorical (MC) format — fast, batched, no sampling.
 
-**LAP Score interpretation:**
-
-| LAP | Meaning |
-|-----|---------|
-| 0.00 | Perfect isolation — random chance on future questions |
-| 0.00-0.05 | Minimal leakage — acceptable |
-| 0.05-0.15 | Moderate leakage — investigate source |
-| 0.15-0.30 | Significant leakage — temporal isolation compromised |
-| > 0.30 | Severe leakage — substantial future knowledge |
-
-### Generator-to-Evaluation Alignment
-
-Every generator targets specific benchmarks. This enables clean ablation studies: remove a generator, measure which benchmarks degrade.
-
-```
-                 Tier 1 (Core)         Tier 2 (Breadth)      Tier 3
-                 MMLU ARC GSM8K Hella  BoolQ PIQA Wino RACE  LAB
-Gen A (Factual)  **   **               *
-Gen B (CoT)           *                               **
-Gen C (Compreh)                        *               **
-Gen D (Quantit)            **
-Gen E (Complet)                  **          *    *
-Gen F (Instruct)                                      .
-External: GSM8K             **
-External: MATH              *
-
-** = primary   * = secondary   . = indirect
-```
-
-### When to Evaluate
-
-| Training Stage | What to Evaluate | Purpose |
-|----------------|------------------|---------|
-| After base training | Tier 1 + LAB Eval | Baseline + temporal isolation check |
-| After mid-training | Tier 1 + Tier 2 + LAB Eval | Did mid-training help or hurt? |
-| After SFT | All 3 tiers | Full evaluation of final model |
-
-### Results Template
-
-| Period | MMLU | ARC-C | GSM8K | HellaSwag | BoolQ | PIQA | WinoGr | RACE | LAB | LAP |
-|--------|------|-------|-------|-----------|-------|------|--------|------|-----|-----|
-| 1678_1849 | | | | | | | | | | |
-| 1850_1899 | | | | | | | | | | |
+| Training Stage | Frequency | What to Evaluate |
+|----------------|-----------|------------------|
+| Base training | Every 2000 steps | CORE metric (base_eval.py) |
+| Mid-training | Every 200 steps | Internal MC + HellaSwag + Winogrande |
+| Mid-training | At boundaries | All 3 sources (full 5-benchmark + LAB) |
+| SFT | Every 200 steps | Internal MC + HellaSwag + Winogrande |
+| SFT | At boundaries | All 3 sources |
 | 1900_1949 | | | | | | | | | | |
 | 1950_1999 | | | | | | | | | | |
-| 2000_2009 | | | | | | | | | | |
-| 2010_2023 | | | | | | | | | | |
-
 ---
 
 ## Dependencies

@@ -184,12 +184,19 @@ def validate_conversation(messages):
     Validate a conversation against nanochat's CustomJSON format.
     Returns (is_valid, error_message).
 
+    Accepts either:
+    - A bare list of message dicts (legacy format)
+    - A dict with "messages" key (metadata-wrapped format)
+
     Rules (from nanochat/tasks/customjson.py lines 42-50):
     - Must be a list
     - At least 2 messages
     - Alternating user/assistant roles starting with user
     - All content must be strings
     """
+    # Unwrap metadata dict if present
+    if isinstance(messages, dict):
+        messages = messages.get("messages", [])
     if not isinstance(messages, list):
         return False, f"Expected list, got {type(messages)}"
     if len(messages) < 2:
