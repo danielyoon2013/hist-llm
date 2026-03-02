@@ -93,7 +93,7 @@ All generators are corpus-based — they read documents from `synthetic/input/` 
 | A | Factual QA | `mc4`, `open` | ARC | 2 |
 | B | Chain-of-Thought | `mc4`, `cot` | ARC | 2 |
 | C | Reading Comprehension | `mc4_passage` | RACE | 2 |
-| D | Quantitative | `mc4`, `open`, `cot` | MathQA | 2 |
+| D | Quantitative | `mc4`, `open`, `cot` | MathQA, GSM-MC | 2 |
 | E | Historical Completion | `mc4` | HellaSwag | 2 |
 | F | Instruction Following | `mc4_passage` | RACE | 2 |
 
