@@ -100,9 +100,12 @@ def main():
             gen = gen_cls()
             id_path = batch_dir / f"{gen.name}_batch_id.txt"
             if id_path.exists():
-                batch_id = id_path.read_text().strip()
-                print(f"\n{gen.name}:")
-                check_batch_status(batch_id)
+                batch_ids = [line.strip() for line in id_path.read_text().strip().splitlines() if line.strip()]
+                print(f"\n{gen.name} ({len(batch_ids)} batch(es)):")
+                for bi, batch_id in enumerate(batch_ids):
+                    prefix = f"  Part {bi+1}/{len(batch_ids)}: " if len(batch_ids) > 1 else ""
+                    print(prefix, end="")
+                    check_batch_status(batch_id)
             else:
                 print(f"\n{gen.name}: no batch submitted")
         return
@@ -140,7 +143,10 @@ def main():
 
         if action == "submit":
             if result:
-                print(f"  Batch submitted: {result}")
+                ids = result if isinstance(result, list) else [result]
+                print(f"  Batch submitted: {len(ids)} batch(es)")
+                for bid in ids:
+                    print(f"    {bid}")
             else:
                 print(f"  Generator {gen_key}: submit failed.")
         elif result and isinstance(result, dict):

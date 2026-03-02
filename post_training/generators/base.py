@@ -486,7 +486,7 @@ class BaseGenerator(ABC):
                     entry["chunk_idx"] = task_tuple[4]
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        # Write batch request file
+        # Build request dicts
         requests = []
         for task_tuple in tasks:
             cid, prompt = task_tuple[0], task_tuple[1]
@@ -497,22 +497,31 @@ class BaseGenerator(ABC):
                 "temperature": 0.7,
             })
 
-        request_path = batch_dir / f"{self.name}_requests.jsonl"
-        create_batch_request_file(requests, str(request_path))
+        # Split into chunks (OpenAI limit: ~100MB / 50K requests per batch)
+        CHUNK_SIZE = 40_000
+        chunks = [requests[i:i + CHUNK_SIZE]
+                  for i in range(0, len(requests), CHUNK_SIZE)]
 
-        # Submit batch
-        batch_id = submit_batch(
-            str(request_path),
-            description=f"{self.name}_{period}",
-        )
+        batch_ids = []
+        for ci, chunk in enumerate(chunks):
+            suffix = f"_part{ci}" if len(chunks) > 1 else ""
+            request_path = batch_dir / f"{self.name}_requests{suffix}.jsonl"
+            create_batch_request_file(chunk, str(request_path))
 
-        # Save batch ID
+            batch_id = submit_batch(
+                str(request_path),
+                description=f"{self.name}_{period}{suffix}",
+            )
+            batch_ids.append(batch_id)
+            print(f"  Part {ci+1}/{len(chunks)}: {batch_id} ({len(chunk):,} requests)")
+
+        # Save batch IDs (one per line)
         id_path = batch_dir / f"{self.name}_batch_id.txt"
         with open(id_path, "w") as f:
-            f.write(batch_id)
-        print(f"  Batch ID saved: {id_path.name}")
+            f.write("\n".join(batch_ids))
+        print(f"  {len(batch_ids)} batch(es) saved: {id_path.name}")
 
-        return batch_id
+        return batch_ids[0] if len(batch_ids) == 1 else batch_ids
 
     def _build_metadata_tasks(self, period, start_year, end_year,
                               target_examples=None):
@@ -551,19 +560,24 @@ class BaseGenerator(ABC):
         generators_dir = paths["synthetic_dir"] / "by_generator"
         os.makedirs(generators_dir, exist_ok=True)
 
-        # Read batch ID
+        # Read batch ID(s) — one per line
         id_path = batch_dir / f"{self.name}_batch_id.txt"
         if not id_path.exists():
             print(f"No batch ID found at {id_path}")
             return None
-        batch_id = id_path.read_text().strip()
+        batch_ids = [line.strip() for line in id_path.read_text().strip().splitlines() if line.strip()]
 
-        # Download results
-        results_path = batch_dir / f"{self.name}_results.jsonl"
-        results = download_batch_results(batch_id, str(results_path))
-        if results is None:
-            print(f"Batch not complete yet")
-            return None
+        # Download results from all batches
+        results = []
+        for bi, batch_id in enumerate(batch_ids):
+            suffix = f"_part{bi}" if len(batch_ids) > 1 else ""
+            results_path = batch_dir / f"{self.name}_results{suffix}.jsonl"
+            part_results = download_batch_results(batch_id, str(results_path))
+            if part_results is None:
+                print(f"Batch {bi+1}/{len(batch_ids)} ({batch_id}) not complete yet")
+                return None
+            results.extend(part_results)
+            print(f"  Part {bi+1}/{len(batch_ids)}: {len(part_results):,} results")
 
         # Load manifest (custom_id -> {chunk_text, doc_name, chunk_idx})
         manifest = {}
