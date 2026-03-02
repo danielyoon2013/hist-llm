@@ -10,7 +10,6 @@ def get_generator_registry():
     from src.post_training.generators.gen_e_quantitative import GenEQuantitative
     from src.post_training.generators.gen_f_completion import GenFCompletion
     from src.post_training.generators.gen_g_instruct import GenGInstruct
-    from src.post_training.generators.gen_h_histfacts import GenHHistFacts
 
     return {
         "A": GenAFactual,
@@ -20,5 +19,4 @@ def get_generator_registry():
         "E": GenEQuantitative,
         "F": GenFCompletion,
         "G": GenGInstruct,
-        "H": GenHHistFacts,
     }

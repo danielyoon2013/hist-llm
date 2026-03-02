@@ -108,56 +108,71 @@ DEFAULT_SFT_SIZE = 10_000       # 10K SFT examples (1% proportional subsample)
 DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
 
 # ---------------------------------------------------------------------------
-# Allocation table: % of total target per generator × format
+# Generator specification — single source of truth
 # ---------------------------------------------------------------------------
-# Single source of truth for how examples are distributed.
-# Each raw item renders into ALL of that generator's formats, so per-format
-# shares within a generator are always equal (gen_total / num_formats).
+# Allocation is purely determined by format count: each format slot gets
+# an equal share of the target. No manual percentages to maintain.
 #
-# | Gen | mc4   | mc2   | mc4_p | mc2_p | open  | cot   | Total  |
-# |-----|-------|-------|-------|-------|-------|-------|--------|
-# | A   | 9.50  |       |       |       | 9.50  |       | 19.00  |
-# | B   | 6.33  |       |       |       | 6.33  | 6.34  | 19.00  |
-# | C   |       |       | 9.50  | 9.50  |       |       | 19.00  |
-# | D   | 1.25  |       |       |       | 1.25  |       |  2.50  |
-# | E   |       |       |       |       | 6.33  | 6.34  | 12.67  |
-# | F   | 9.50  | 9.50  |       |       |       |       | 19.00  |
-# | G   |       |       | 6.33  |       |       |       |  6.33  |
-# | H   | 1.25  |       |       |       | 1.25  |       |  2.50  |
-# |-----|-------|-------|-------|-------|-------|-------|--------|
-# |Total|27.83  | 9.50  |15.83  | 9.50  |24.66  |12.68  |100.00  |
+# At 1M target with 14 total format slots:
+#   per_slot = 71,428  →  A(2)=142,856  B(3)=214,284  ...  G(1)=71,428
+#
+# corpus: True = needs document text, False = metadata-only (no docs)
 
-ALLOCATION_TABLE = {
-    "A": {"mc4": 9.50, "open": 9.50},                     # 19.00%
-    "B": {"mc4": 6.33, "open": 6.33, "cot": 6.34},        # 19.00%
-    "C": {"mc4_passage": 9.50, "mc2_passage": 9.50},      # 19.00%
-    "D": {"mc4": 1.25, "open": 1.25},                     #  2.50%
-    "E": {"open": 6.33, "cot": 6.34},                     # 12.67%
-    "F": {"mc4": 9.50, "mc2": 9.50},                      # 19.00%
-    "G": {"mc4_passage": 6.33},                            #  6.33%
-    "H": {"mc4": 1.25, "open": 1.25},                     #  2.50%
+ITEMS_PER_CALL = 2      # items requested per API call (all generators)
+CHUNKS_PER_DOC = 2      # average chunks per document (6000 chars, 300 overlap)
+
+GENERATOR_SPEC = {
+    "A": {"formats": ("mc4", "open"),                "corpus": True},
+    "B": {"formats": ("mc4", "open", "cot"),         "corpus": True},
+    "C": {"formats": ("mc4_passage", "mc2_passage"), "corpus": True},
+    "D": {"formats": ("mc4", "open"),                "corpus": False},
+    "E": {"formats": ("open", "cot"),                "corpus": True},
+    "F": {"formats": ("mc4", "mc2"),                 "corpus": True},
+    "G": {"formats": ("mc4_passage",),               "corpus": True},
 }
 
-# Examples per doc: 2 chunks × 30 examples/chunk = 60
-# (30 = sum of items_per_chunk × num_formats across all 6 corpus generators)
-EXAMPLES_PER_DOC = 60
 
-def compute_allocation(target=DEFAULT_TARGET):
-    """Compute per-generator example targets from the allocation table.
+def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
+    """Derive per-generator targets and doc counts from format counts.
 
-    Returns dict: {gen_letter: target_examples}
+    Returns:
+        {
+            "target": 1_000_000,
+            "generators": {
+                "A": {"target": 142864, "per_format": 71428, "docs_needed": 17857},
+                "D": {"target": 142856, "per_format": 71428, "docs_needed": None, "api_calls": 35714},
+                ...
+            }
+        }
     """
-    alloc = {}
-    for gen, formats in ALLOCATION_TABLE.items():
-        gen_pct = sum(formats.values())
-        alloc[gen] = int(target * gen_pct / 100)
+    if gen_keys is None:
+        gen_keys = list(GENERATOR_SPEC.keys())
 
-    # Adjust rounding to hit exact target
-    diff = target - sum(alloc.values())
-    if diff != 0:
-        alloc["A"] += diff  # absorb rounding into largest generator
+    total_slots = sum(len(GENERATOR_SPEC[k]["formats"]) for k in gen_keys)
+    per_slot = target // total_slots
 
-    return alloc
+    generators = {}
+    for key in sorted(gen_keys):
+        n_fmts = len(GENERATOR_SPEC[key]["formats"])
+        gen_target = per_slot * n_fmts
+
+        entry = {"target": gen_target, "per_format": per_slot}
+
+        if GENERATOR_SPEC[key]["corpus"]:
+            items_per_doc = ITEMS_PER_CALL * CHUNKS_PER_DOC
+            entry["docs_needed"] = -(-per_slot // items_per_doc)
+        else:
+            entry["docs_needed"] = None
+            entry["api_calls"] = -(-per_slot // ITEMS_PER_CALL)
+
+        generators[key] = entry
+
+    # Absorb rounding remainder into A
+    diff = target - sum(g["target"] for g in generators.values())
+    if diff and "A" in generators:
+        generators["A"]["target"] += diff
+
+    return {"target": target, "generators": generators}
 
 
 # ---------------------------------------------------------------------------

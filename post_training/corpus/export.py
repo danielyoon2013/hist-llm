@@ -1,4 +1,8 @@
 """
+DEPRECATED: Use `python -m src.post_training.prepare` instead.
+This script has been replaced by prepare.py which outputs uniform parquets.
+
+---
 Export sampled documents from parquet shards as individual .txt files
 for consumption by Meta's synthetic-data-kit.
 

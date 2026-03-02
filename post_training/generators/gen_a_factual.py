@@ -8,9 +8,8 @@ from src.post_training.generators.prompts import QA_PROMPT
 
 class GenAFactual(BaseGenerator):
 
+    gen_key = "A"
     name = "gen_a_factual"
-    items_per_chunk = 3
-    SUPPORTED_FORMATS = (FORMAT_MC4, FORMAT_OPEN)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return QA_PROMPT.format(num_items=self.items_per_chunk, text=chunk)

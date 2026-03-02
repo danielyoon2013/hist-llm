@@ -22,7 +22,10 @@ from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.post_training.config import PERIODS, get_paths, load_api_key, MODEL, MAX_RETRIES, RETRY_BASE_DELAY
+from src.post_training.config import (
+    PERIODS, get_paths, load_api_key, MODEL, MAX_RETRIES, RETRY_BASE_DELAY,
+    GENERATOR_SPEC, ITEMS_PER_CALL,
+)
 from src.post_training.utils import validate_conversation, write_jsonl
 
 
@@ -140,12 +143,21 @@ def call_api(client, prompt, model=MODEL, max_tokens=4096, temperature=0.7):
 class BaseGenerator(ABC):
     """Abstract base class for synthetic data generators."""
 
+    gen_key: str = ""   # set by each subclass ("A", "B", etc.)
     name: str = ""
-    items_per_chunk: int = 3
-    needs_corpus: bool = True   # False for D (temporal) and H (hist facts)
-    num_batches: int = 10       # for metadata-based generators (D)
-    train_only: bool = False    # True for H (factual recall — eval via external benchmarks)
-    SUPPORTED_FORMATS: tuple = (FORMAT_OPEN,)  # override in subclasses
+    num_batches: int = 10  # legacy default for metadata generators
+
+    @property
+    def items_per_chunk(self):
+        return ITEMS_PER_CALL
+
+    @property
+    def SUPPORTED_FORMATS(self):
+        return GENERATOR_SPEC[self.gen_key]["formats"]
+
+    @property
+    def needs_corpus(self):
+        return GENERATOR_SPEC[self.gen_key]["corpus"]
 
     @abstractmethod
     def build_prompt(self, chunk, period, start_year, end_year):

@@ -9,9 +9,8 @@ from src.post_training.generators.prompts import INSTRUCT_PROMPT
 
 class GenGInstruct(BaseGenerator):
 
+    gen_key = "G"
     name = "gen_g_instruct"
-    items_per_chunk = 2
-    SUPPORTED_FORMATS = (FORMAT_MC4_PASSAGE,)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return INSTRUCT_PROMPT.format(num_items=self.items_per_chunk, text=chunk)

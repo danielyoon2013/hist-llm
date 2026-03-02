@@ -1,4 +1,8 @@
 """
+DEPRECATED: Use `python -m src.post_training.prepare` instead.
+This script's logic has been inlined into prepare.py.
+
+---
 Build a metadata index joining quality scores and collection labels
 for all documents in a period.
 

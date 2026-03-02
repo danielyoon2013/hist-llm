@@ -9,9 +9,8 @@ from src.post_training.generators.prompts import COT_PROMPT
 
 class GenBCoT(BaseGenerator):
 
+    gen_key = "B"
     name = "gen_b_cot"
-    items_per_chunk = 2
-    SUPPORTED_FORMATS = (FORMAT_MC4, FORMAT_OPEN, FORMAT_COT)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return COT_PROMPT.format(num_items=self.items_per_chunk, text=chunk)

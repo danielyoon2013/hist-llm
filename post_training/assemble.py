@@ -160,51 +160,33 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
     for name, convs in sorted(generator_data.items()):
         print(f"  {name}: {len(convs):,} conversations")
 
-    # Separate train-only generators (e.g. gen_h_histfacts — factual recall
-    # is evaluated via external benchmarks, not a held-out test split)
-    TRAIN_ONLY_PREFIXES = ("gen_h_histfacts",)
-    splittable_data = {}
-    train_only_data = {}
-    for name, convs in generator_data.items():
-        if any(name.startswith(p) for p in TRAIN_ONLY_PREFIXES):
-            train_only_data[name] = convs
-            print(f"  (train-only: {name})")
-        else:
-            splittable_data[name] = convs
+    # Merge all generators
+    all_convs = []
+    for convs in generator_data.values():
+        all_convs.extend(convs)
 
-    train_only_convs = []
-    for convs in train_only_data.values():
-        train_only_convs.extend(convs)
+    total_all = len(all_convs)
+    print(f"\nTotal: {total_all:,} conversations")
 
-    # Merge splittable generators
-    all_splittable = []
-    for convs in splittable_data.values():
-        all_splittable.extend(convs)
-
-    total_splittable = len(all_splittable)
-    print(f"\nSplittable: {total_splittable:,} conversations")
-    print(f"Train-only: {len(train_only_convs):,} conversations (gen_h)")
-
-    # Train/test split on splittable data
+    # Train/test split
     rng = random.Random(SEED)
-    indices = list(range(total_splittable))
+    indices = list(range(total_all))
     rng.shuffle(indices)
-    test_size = max(1, int(total_splittable * test_ratio))
+    test_size = max(1, int(total_all * test_ratio))
     test_indices = set(indices[:test_size])
 
-    test = [all_splittable[i] for i in range(total_splittable) if i in test_indices]
-    train_splittable = [all_splittable[i] for i in range(total_splittable) if i not in test_indices]
+    test = [all_convs[i] for i in range(total_all) if i in test_indices]
+    train = [all_convs[i] for i in range(total_all) if i not in test_indices]
 
-    # Mid-train = splittable train + all train-only
-    midtrain = train_splittable + train_only_convs
+    # Mid-train = all train examples
+    midtrain = list(train)
     rng2 = random.Random(SEED + 1)
     rng2.shuffle(midtrain)
 
-    # SFT = proportional subsample from TRAIN data only (excluding test + train-only)
-    # Must sample from post-split train data to avoid SFT/test contamination
+    # SFT = proportional subsample from train data only (avoids test contamination)
     test_ids = set(id(c) for c in test)
     train_by_gen = {}
-    for name, convs in splittable_data.items():
+    for name, convs in generator_data.items():
         train_convs = [c for c in convs if id(c) not in test_ids]
         if train_convs:
             train_by_gen[name] = train_convs

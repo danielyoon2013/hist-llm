@@ -10,9 +10,8 @@ from src.post_training.generators.prompts import COMPLETION_PROMPT
 
 class GenFCompletion(BaseGenerator):
 
+    gen_key = "F"
     name = "gen_f_completion"
-    items_per_chunk = 3
-    SUPPORTED_FORMATS = (FORMAT_MC4, FORMAT_MC2)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return COMPLETION_PROMPT.format(num_items=self.items_per_chunk, text=chunk)

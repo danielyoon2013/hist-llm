@@ -12,38 +12,28 @@ Usage:
     python -m src.post_training.generate process --period 1900_1949
 
     # Sync mode (testing / small runs)
-    python -m src.post_training.generate --period 1900_1949 --target 180 --sync
-
-    # Sync mode is also the default action
-    python -m src.post_training.generate --period 1900_1949 --target 180
+    python -m src.post_training.generate --period 1900_1949 --target 140 --sync
 
     # Run specific generators only
-    python -m src.post_training.generate submit --period 1900_1949 --generators A B D H
+    python -m src.post_training.generate submit --period 1900_1949 --generators A B D
 
-    # Legacy: explicit doc count (overrides auto-computation)
-    python -m src.post_training.generate --period 1900_1949 --max-docs 3 --sync
-
-Allocation at --target 1,000,000 (approximate, ±1 from rounding):
-    A (Factual QA):      ~190,000  (19.0%)  — corpus
-    B (Chain-of-Thought): 190,000  (19.0%)  — corpus
-    C (Comprehension):   190,000  (19.0%)  — corpus
-    E (Quantitative):    ~126,666  (12.7%)  — corpus
-    F (Completion):      190,000  (19.0%)  — corpus
-    G (Instruct):         63,333   (6.3%)  — corpus
-    D (Temporal):         25,000   (2.5%)  — metadata
-    H (Hist Facts):       25,000   (2.5%)  — metadata, train-only
+Allocation is derived from format counts (equal weight per format slot).
+At --target 1,000,000 with 14 format slots (71,428 per slot):
+    A (Factual QA):       142,856  — corpus
+    B (Chain-of-Thought): 214,284  — corpus
+    C (Comprehension):    142,856  — corpus
+    D (Temporal):         142,856  — metadata
+    E (Quantitative):     142,856  — corpus
+    F (Completion):       142,856  — corpus
+    G (Instruct):          71,428  — corpus
 """
 
 import argparse
 
 from src.post_training.config import (
-    PERIODS, DEFAULT_TARGET, EXAMPLES_PER_DOC, compute_allocation, get_paths,
+    PERIODS, DEFAULT_TARGET, GENERATOR_SPEC, compute_plan, get_paths,
 )
 from src.post_training.generators import get_generator_registry
-
-
-CORPUS_GENERATORS = {"A", "B", "C", "E", "F", "G"}
-METADATA_GENERATORS = {"D", "H"}
 
 
 def main():
@@ -58,7 +48,7 @@ def main():
     parser.add_argument("--target", type=int, default=DEFAULT_TARGET,
                         help=f"Total examples to generate (default: {DEFAULT_TARGET:,})")
     parser.add_argument("--generators", type=str, nargs="+", default=None,
-                        choices=["A", "B", "C", "D", "E", "F", "G", "H"],
+                        choices=list(GENERATOR_SPEC.keys()),
                         help="Which generators to run (default: all)")
     parser.add_argument("--collections", type=str, nargs="+", default=None,
                         help="Specific collections to process (default: all)")
@@ -74,20 +64,11 @@ def main():
                         help="Force synchronous API calls (for small test runs)")
     args = parser.parse_args()
 
-    # --sync forces sync mode regardless of action
     action = "run" if args.sync else args.action
+    gen_keys = args.generators or list(GENERATOR_SPEC.keys())
 
-    gen_keys = args.generators or ["A", "B", "C", "D", "E", "F", "G", "H"]
-
-    # Compute per-generator allocation
-    allocation = compute_allocation(args.target)
-
-    # Compute docs needed for corpus generators
-    corpus_target = sum(allocation[g] for g in CORPUS_GENERATORS if g in gen_keys)
-    docs_needed = max(1, -(-corpus_target // EXAMPLES_PER_DOC))  # ceil div
-
-    if args.max_docs is not None:
-        docs_needed = args.max_docs  # legacy override
+    # Single call derives everything
+    plan = compute_plan(args.target, gen_keys)
 
     # Print header
     action_label = {"submit": "SUBMIT (Batch API)", "check": "CHECK STATUS",
@@ -96,16 +77,17 @@ def main():
     print(f"Synthetic Data Generation — {action_label[action]}")
     print(f"Period: {args.period} ({PERIODS[args.period][0]}-{PERIODS[args.period][1]})")
     print(f"Target: {args.target:,} total examples")
-    if action in ("submit", "run"):
-        print(f"Docs needed: {docs_needed:,} (at {EXAMPLES_PER_DOC} examples/doc)")
     print(f"{'='*70}")
-    print(f"\n{'Generator':<25} {'Type':<10} {'Target':>10}")
-    print(f"{'-'*45}")
+    print(f"\n{'Generator':<12} {'Type':<10} {'Target':>10} {'Docs':>10}")
+    print(f"{'-'*50}")
     for g in sorted(gen_keys):
-        gtype = "metadata" if g in METADATA_GENERATORS else "corpus"
-        print(f"  {g:<23} {gtype:<10} {allocation[g]:>10,}")
-    print(f"{'-'*45}")
-    print(f"  {'TOTAL':<23} {'':10} {sum(allocation[g] for g in gen_keys):>10,}")
+        gtype = "metadata" if not GENERATOR_SPEC[g]["corpus"] else "corpus"
+        docs = plan["generators"][g]["docs_needed"]
+        docs_str = f"{docs:,}" if docs else "—"
+        print(f"  {g:<10} {gtype:<10} {plan['generators'][g]['target']:>10,} {docs_str:>10}")
+    print(f"{'-'*50}")
+    total = sum(plan["generators"][g]["target"] for g in gen_keys)
+    print(f"  {'TOTAL':<10} {'':10} {total:>10,}")
     print()
 
     registry = get_generator_registry()
@@ -134,22 +116,27 @@ def main():
     for gen_key in gen_keys:
         gen_cls = registry[gen_key]
         gen = gen_cls()
-        target_for_gen = allocation[gen_key]
+        gen_plan = plan["generators"][gen_key]
+
+        # Per-generator docs_needed (None for metadata generators)
+        docs_for_gen = gen_plan["docs_needed"]
+        if args.max_docs is not None:
+            docs_for_gen = args.max_docs  # legacy override
 
         print(f"\n{'='*70}")
         verb = {"submit": "Submitting", "process": "Processing", "run": "Running"}
         print(f"{verb[action]} Generator {gen_key}: {gen.name}")
-        print(f"Target: {target_for_gen:,} examples")
+        print(f"Target: {gen_plan['target']:,} examples")
         print(f"{'='*70}")
 
         result = gen.run(
             period=args.period,
             collections=args.collections,
             max_workers=args.max_workers,
-            max_docs=docs_needed if gen.needs_corpus else None,
+            max_docs=docs_for_gen,
             chunk_size=args.chunk_size,
             overlap=args.overlap,
-            target_examples=target_for_gen,
+            target_examples=gen_plan["target"],
             action=action,
         )
 

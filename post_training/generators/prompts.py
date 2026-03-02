@@ -1,8 +1,8 @@
 """
-Prompt templates for all 8 synthetic data generators (A-H).
+Prompt templates for synthetic data generators (A-G).
 
 Generators A+B: extracted from run_direct.py
-Generators C-H: new, designed per 03_SYNTHETIC_DATA_GENERATORS.md
+Generators C-G: new, designed per 03_SYNTHETIC_DATA_GENERATORS.md
 
 Each prompt requests all fields needed for multi-format rendering:
 - Generators needing MC format also request distractors
@@ -163,27 +163,3 @@ Text:
 {text}"""
 
 
-# ---------------------------------------------------------------------------
-# Generator H: Historical Facts & Dates (metadata-based, no corpus)
-# Formats: MC-4, Open-ended
-# ---------------------------------------------------------------------------
-
-HIST_FACTS_PROMPT = """Generate {num_items} factual questions about important historical events, dates, and figures from the year {year} (within the broader period {start_year}-{end_year}).
-
-Requirements:
-1. All events, dates, and figures must be from the year {year} specifically
-2. Questions must be SELF-CONTAINED and factually precise
-3. Vary question types across these categories:
-   - Date recall: "In what year did [event] occur?"
-   - Event identification: "What major event occurred in [year]?"
-   - Key figures: "Who was the [role] during [event/period]?"
-   - Association: "Which country/organization [did X]?"
-   - Cause/effect: "What was the immediate cause of [event]?"
-4. Vary across domains: politics, wars/conflicts, science/technology, economics, culture/arts, diplomacy, social movements
-5. Answers must be concise and factually accurate (1-2 sentences max)
-6. For each question, provide 3 plausible but INCORRECT alternative answers as "distractors"
-7. Distractors should be from the same domain and time period but factually wrong
-8. If the year {year} has fewer notable events, include events that BEGAN or were ONGOING in {year}
-
-Return a JSON object:
-{{"facts": [{{"question": "In what year was the Treaty of Versailles signed?", "answer": "The Treaty of Versailles was signed in 1919.", "distractors": ["The Treaty of Versailles was signed in 1918.", "The Treaty of Versailles was signed in 1920.", "The Treaty of Versailles was signed in 1921."], "domain": "diplomacy", "year": 1919}}]}}"""

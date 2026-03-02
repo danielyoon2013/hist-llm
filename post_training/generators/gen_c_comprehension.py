@@ -11,9 +11,8 @@ from src.post_training.generators.prompts import COMPREHENSION_PROMPT
 
 class GenCComprehension(BaseGenerator):
 
+    gen_key = "C"
     name = "gen_c_comprehension"
-    items_per_chunk = 3
-    SUPPORTED_FORMATS = (FORMAT_MC4_PASSAGE, FORMAT_MC2_PASSAGE)
 
     def build_prompt(self, chunk, period, start_year, end_year):
         return COMPREHENSION_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
