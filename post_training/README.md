@@ -93,7 +93,7 @@ All generators are corpus-based — they read documents from `synthetic/input/` 
 | A | Factual QA | `mc4`, `open` | ARC | 2 |
 | B | Chain-of-Thought | `mc4`, `cot` | ARC | 2 |
 | C | Reading Comprehension | `mc4_passage` | RACE | 2 |
-| D | Quantitative | `mc4`, `open`, `cot` | — | 2 |
+| D | Quantitative | `mc4`, `open`, `cot` | MathQA | 2 |
 | E | Historical Completion | `mc4` | HellaSwag | 2 |
 | F | Instruction Following | `mc4_passage` | RACE | 2 |
 
@@ -333,32 +333,56 @@ Our `hist_synthetic_test.jsonl` — MC questions from held-out documents. Tests 
 
 #### Source 2: External Benchmarks (time-invariant)
 
-Benchmarks already implemented in nanochat. We do NOT train on these datasets — they serve as independent capability monitors. Scores should stay stable during training; significant drops signal catastrophic forgetting.
+Benchmarks already implemented in nanochat (except MathQA — to be added). We do NOT train on these datasets — they serve as independent capability monitors. Scores should stay stable during training; significant drops signal catastrophic forgetting.
 
 | Benchmark | Format | LAB Contamination | What It Tests |
 |-----------|--------|-------------------|---------------|
-| ARC-Challenge | MC-4 | ~2% | Science reasoning |
-| HellaSwag | MC-4 | Low (est.) | Commonsense sentence completion |
-| RACE-Middle | MC-4 + Passage | Low (est.) | Reading comprehension |
-| RACE-High | MC-4 + Passage | Low (est.) | Reading comprehension |
-| Winogrande | MC-2 | Low (est.) | Coreference resolution |
+| ARC-Challenge | MC-4 | ~2% | Causal mechanism application |
+| HellaSwag | MC-4 | Low (est.) | Narrative/activity sequence coherence |
+| RACE-Middle | MC-4 + Passage | Low (est.) | Factual extraction from passage |
+| RACE-High | MC-4 + Passage | Low (est.) | Inferential comprehension (author intent, synthesis) |
+| Winogrande | MC-2 | Low (est.) | Semantic coreference resolution |
+| MathQA | MC-5 | Low (est.) | Quantitative reasoning (arithmetic, rates, geometry) |
 
 **Why not MMLU?** 34.6% LAB contamination (1950-1999 period). Too much post-period knowledge to serve as a time-invariant benchmark.
 
-**Why not GSM8K?** It's generative eval (sequential sampling) — too slow for frequent training-interval evaluation. Our Gen D MC4 covers math reasoning in the internal test split.
+**Why not GSM8K?** It's generative eval (sequential sampling) — too slow for frequent training-interval evaluation. Our Gen D MC4 + MathQA cover math reasoning.
 
-#### How Our Generators Help With External Benchmarks
+#### What Each Benchmark Actually Tests (Key Insights)
 
-Although we don't train on external datasets, our generators produce data that exercises the same skills these benchmarks test:
+Understanding what makes the wrong answers wrong in each benchmark reveals what skill is being tested and how our generators should produce training data that exercises the same skill:
 
-| External Benchmark | Skill Tested | Our Generator | How It Helps |
-|--------------------|-------------|---------------|-------------|
-| ARC-Challenge | Science reasoning (cause-effect, analysis) | Gen A (Factual QA), Gen B (CoT) | Same MC-4 format; trains analytical reasoning over factual content, though our domain is history not science |
-| HellaSwag | Plausible sentence completion | Gen E (Historical Completion) | Same HellaSwag-style format — context + pick most natural continuation. Pattern match, but content differs (historical text vs everyday activities) |
-| RACE-Middle/High | Passage-based reading comprehension | Gen C (Comprehension), Gen F (Instruct) | Direct format match — both produce RACE-style passage + MC-4 questions. Our passages are historical; RACE passages are educational narratives |
-| Winogrande | Coreference resolution | None | No generator analog. Tests fundamental NLU from base pretraining. Serves purely as a forgetting detector |
+| Benchmark | What Makes Wrong Answers Wrong | Distractor Philosophy |
+|-----------|-------------------------------|----------------------|
+| **ARC-Challenge** | Use correct scientific vocabulary but apply the wrong causal mechanism or direction (e.g., confusing rotation with revolution, reversing cause and effect) | **Correct concepts, wrong reasoning** |
+| **HellaSwag** | On-topic and syntactically plausible but describe physically impossible or contextually inappropriate next steps in an activity sequence | **On-topic but narratively incoherent** |
+| **RACE-Middle** | Plausible claims that are directly contradicted by specific sentences in the passage | **Contradicted by text** |
+| **RACE-High** | Partially correct but miss the nuance, scope, or tone — e.g., capturing one detail but not the author's overall argument | **Right detail, wrong big picture** |
+| **Winogrande** | The other entity in the same sentence — adversarial twin construction where one trigger word flips which entity the blank refers to | **Same sentence, wrong referent** |
+| **MathQA** | Numerically close answers from common calculation mistakes (wrong operation, off-by-one, rounding errors, forgetting a step) | **Plausible arithmetic mistakes** |
 
-**Key insight:** ARC and Winogrande test capabilities that primarily come from base pretraining (science knowledge, coreference resolution). SFT/mid-training on historical data is unlikely to improve them — but shouldn't degrade them either. RACE and HellaSwag are the benchmarks most likely to benefit from our training, since Gen C/F and Gen E directly train those patterns.
+#### How Our Generators Align With External Benchmarks
+
+Although we don't train on external datasets, our generators produce data that exercises the same skills. The distractor philosophy from each benchmark informed our prompt design:
+
+| External Benchmark | Skill Tested | Our Generator | How It Aligns |
+|--------------------|-------------|---------------|--------------|
+| **ARC-Challenge** | Apply causal mechanisms to novel scenarios | Gen A (Factual QA), Gen B (CoT) | Both train analytical cause-effect reasoning in MC-4 format. Our distractors use same vocabulary but wrong reasoning — same ARC pattern, historical domain instead of science |
+| **HellaSwag** | Predict next step in an activity sequence | Gen E (Completion) | Prompt explicitly reframed to test narrative coherence: distractors are on-topic but narratively incoherent (don't logically follow from the setup), matching HellaSwag's core pattern |
+| **RACE-Middle** | Extract facts from a passage | Gen C (Comprehension) | Direct format match — passage + MC-4. Our distractors are "plausible, clearly incorrect based on the passage" — same as RACE-M's contradicted-by-text pattern |
+| **RACE-High** | Infer author intent and synthesize across a passage | Gen F (Instruct), Gen C (Comprehension) | Gen C tests "main idea, inference, vocabulary, supporting detail" — covers RACE-H question types. Gen F adds instruction-following depth |
+| **Winogrande** | Resolve coreference via semantic understanding | None | No generator analog. Tests fundamental NLU from base pretraining. Serves purely as a catastrophic forgetting detector |
+| **MathQA** | Solve word problems with multi-step arithmetic | Gen D (Quantitative) | Both produce math word problems with step-by-step reasoning. Our distractors use "common arithmetic mistakes" — identical to MathQA's plausible-miscalculation pattern |
+
+**Expected impact by benchmark:**
+
+| Benchmark | Expected Benefit from Our Training | Rationale |
+|-----------|-----------------------------------|-----------|
+| RACE-M/H | **High** | Gen C/F directly train passage comprehension in the same format |
+| HellaSwag | **Medium** | Gen E trains narrative coherence pattern; content differs (historical vs everyday) |
+| MathQA | **Medium** | Gen D trains quantitative reasoning; our problems are historically grounded, MathQA is general |
+| ARC-Challenge | **Low** | Gen A/B train analytical reasoning, but ARC tests science knowledge we don't teach |
+| Winogrande | **None** | No generator alignment; monitors forgetting only |
 
 #### Source 3: LAB Eval (temporal isolation)
 
@@ -373,6 +397,60 @@ All sources use categorical (MC) format — fast, batched logit comparison, no s
 | Base training | Every N steps | Internal MC + External benchmarks + LAB Eval |
 | Mid-training | Every N steps | Internal MC + External benchmarks + LAB Eval |
 | SFT | Every N steps | Internal MC + External benchmarks + LAB Eval |
+---
+
+## V2 Roadmap
+
+Improvements deferred from V1 MVP to pursue after the first model ships.
+
+### V2.1: Quality Pipeline (Deduplication + Validation)
+
+The `quality/` directory contains a 3-step pipeline that is scaffolded but deferred for V1:
+
+| Step | Script | What It Does |
+|------|--------|-------------|
+| Validate | `quality/validate.py` | Format checks (role alternation, non-empty content), content checks (min length, language detection) |
+| Dedup | `quality/dedup.py` | 3-level deduplication: exact hash, MinHash near-duplicate (Jaccard ~0.8), cross-generator overlap |
+| Pipeline | `quality/pipeline.py` | Orchestrator: validate → dedup → stats JSON |
+
+**Why deferred:** At 1M examples, exact duplicates from different documents are rare (different source text → different questions). MinHash near-dedup matters more at scale and needs tuning of the Jaccard threshold. For MVP, raw generator output goes directly to `assemble.py`.
+
+**V2 plan:** Run the quality pipeline between `generate.py` and `assemble.py`:
+```bash
+python -m src.post_training.generate submit --period 1900_1949
+python -m src.post_training.generate process --period 1900_1949
+python -m src.post_training.quality.pipeline --period 1900_1949    # V2: validate + dedup
+python -m src.post_training.assemble --period 1900_1949 --source deduped
+```
+
+### V2.2: Temporal Reasoning Generator (Corpus-Grounded)
+
+A new generator that identifies causal and temporal relationships across historical events. Unlike the V1 generators that process single document chunks, this generator would take **multiple chunks from different years** within the same collection and ask GPT to identify cross-temporal patterns.
+
+**Approach:**
+- Input: 2-3 chunks from different years of the same collection (e.g., NYT articles from 1910, 1920, 1930)
+- Prompt: Identify causal chains, temporal ordering, consequence relationships between events described across the chunks
+- Formats: MC-4 (eval), Open (train), CoT (train with reasoning)
+- Key difference from V1 generators: cross-document, cross-temporal reasoning rather than single-chunk comprehension
+
+**Why novel:** No existing paper builds synthetic temporal reasoning datasets from historical corpora. This would be a genuine contribution — testing whether a model can reason about cause-effect across time periods using grounded primary sources, not GPT's parametric knowledge.
+
+**Why deferred:** Requires a different document sampling strategy (pairs/triples across years instead of single chunks). The V1 `BaseGenerator` architecture processes one chunk at a time. V2 would need a multi-chunk variant.
+
+### V2.3: Historical Facts Generator (Corpus-Grounded)
+
+A generator focused on dense factual recall — names, dates, places, specific events — extracted directly from corpus documents.
+
+**Approach:**
+- Input: Single document chunk (same as V1 generators)
+- Prompt: Extract 4-6 specific factual claims (dates, names, quantities, locations) from the text and generate recall questions for each
+- Formats: MC-4 (eval), Open (train)
+- Focus: High factual density per question, testing precise recall rather than comprehension or reasoning
+
+**Why useful:** Proves the model can retrieve specific historical information (not just general understanding). Complements Gen A (which tests analytical reasoning) with pure factual recall.
+
+**Why deferred:** Gen A already covers factual QA with analytical depth. Adding a pure-recall generator increases format redundancy. Better to validate with V1 first, then assess whether factual recall is a separate gap.
+
 ---
 
 ## Dependencies
