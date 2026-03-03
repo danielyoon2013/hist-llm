@@ -22,7 +22,10 @@ import argparse
 from pathlib import Path
 from collections import defaultdict
 
-from src.post_training.config import PERIODS, get_paths, DEFAULT_SFT_SIZE, DEFAULT_TEST_RATIO
+from src.post_training.config import (
+    PERIODS, get_paths, DEFAULT_SFT_SIZE, DEFAULT_TEST_RATIO,
+    DEFAULT_TARGET, GENERATOR_SPEC,
+)
 from src.post_training.utils import read_jsonl, write_jsonl
 
 
@@ -122,8 +125,44 @@ def proportional_subsample(generator_data, target_size, seed=SEED):
     return samples
 
 
+def downsample_to_target(generator_data, target, seed=SEED):
+    """Downsample each format-slot file to equal share of target.
+
+    Each JSONL file corresponds to one format slot. All slots get
+    target // total_slots conversations. Files under the cap pass through.
+
+    Args:
+        generator_data: dict of {filename_stem: [conversations]}
+        target: total conversation target (e.g. 1_000_000)
+        seed: random seed for reproducible sampling
+
+    Returns:
+        generator_data (modified in place), with before/after counts printed.
+    """
+    total_slots = sum(len(spec["formats"]) for spec in GENERATOR_SPEC.values())
+    per_slot = target // total_slots
+
+    rng = random.Random(seed)
+    total_before = 0
+    total_after = 0
+
+    print(f"\nDownsampling to {target:,} total ({per_slot:,} per format slot, {total_slots} slots):")
+    for name in sorted(generator_data.keys()):
+        before = len(generator_data[name])
+        total_before += before
+        if before > per_slot:
+            generator_data[name] = rng.sample(generator_data[name], per_slot)
+        after = len(generator_data[name])
+        total_after += after
+        status = f"{before:,} -> {after:,}" if before > per_slot else f"{before:,} (kept)"
+        print(f"  {name}: {status}")
+
+    print(f"  Total: {total_before:,} -> {total_after:,}")
+    return generator_data
+
+
 def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
-             sft_size=DEFAULT_SFT_SIZE, dry_run=False):
+             sft_size=DEFAULT_SFT_SIZE, target=DEFAULT_TARGET, dry_run=False):
     """Assemble synthetic data for a period with document-level train/test split.
 
     Split strategy:
@@ -163,6 +202,7 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
     print(f"Period: {period}")
     print(f"Input:  {input_dir}")
     print(f"Output: train={train_dir}, test={test_dir}")
+    print(f"Target: {target:,}")
     print(f"SFT size: {sft_size:,}")
     print(f"Test ratio: {test_ratio}")
     if dry_run:
@@ -179,6 +219,11 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
     for name, convs in sorted(generator_data.items()):
         print(f"  {name}: {len(convs):,} conversations")
         total_all += len(convs)
+
+    # ------------------------------------------------------------------
+    # Downsample to target (cap each format slot equally)
+    # ------------------------------------------------------------------
+    generator_data = downsample_to_target(generator_data, target)
 
     # ------------------------------------------------------------------
     # Document-level split
@@ -323,9 +368,11 @@ if __name__ == "__main__":
                         help=f"Test split ratio (default: {DEFAULT_TEST_RATIO})")
     parser.add_argument("--sft-size", type=int, default=DEFAULT_SFT_SIZE,
                         help=f"SFT subsample size (default: {DEFAULT_SFT_SIZE:,})")
+    parser.add_argument("--target", type=int, default=DEFAULT_TARGET,
+                        help=f"Total conversation target (default: {DEFAULT_TARGET:,})")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show plan without writing files")
     args = parser.parse_args()
 
     assemble(args.period, source=args.source, test_ratio=args.test_ratio,
-             sft_size=args.sft_size, dry_run=args.dry_run)
+             sft_size=args.sft_size, target=args.target, dry_run=args.dry_run)

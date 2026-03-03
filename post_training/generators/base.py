@@ -286,6 +286,14 @@ class BaseGenerator(ABC):
             for i, chunk in enumerate(chunks):
                 tasks.append((client, doc_name, i, chunk, period, start_year, end_year))
 
+        # Cap tasks to match target (each call → ITEMS_PER_CALL items × num_formats convs)
+        if target_examples:
+            from src.post_training.config import ITEMS_PER_CALL
+            max_calls = target_examples // (ITEMS_PER_CALL * len(self.SUPPORTED_FORMATS))
+            if len(tasks) > max_calls:
+                print(f"Capping tasks: {len(tasks):,} -> {max_calls:,} (target: {target_examples:,})")
+                tasks = tasks[:max_calls]
+
         total_tasks = len(tasks)
         print(f"Tasks: {total_tasks:,} ({len(docs)} docs)")
         for fmt, path in output_paths.items():
@@ -467,6 +475,14 @@ class BaseGenerator(ABC):
         if not tasks:
             print("No tasks to submit!")
             return None
+
+        # Cap tasks to match target
+        if target_examples and self.needs_corpus:
+            from src.post_training.config import ITEMS_PER_CALL
+            max_calls = target_examples // (ITEMS_PER_CALL * len(self.SUPPORTED_FORMATS))
+            if len(tasks) > max_calls:
+                print(f"Capping tasks: {len(tasks):,} -> {max_calls:,} (target: {target_examples:,})")
+                tasks = tasks[:max_calls]
 
         total = len(tasks)
         print(f"Submitting {total:,} batch requests")
