@@ -619,6 +619,8 @@ class BaseGenerator(ABC):
             chunk_val = meta.get("chunk_text") if isinstance(meta, dict) else meta
 
             for item in items:
+                if not isinstance(item, dict):
+                    continue
                 for fmt in self.SUPPORTED_FORMATS:
                     conv = self.format_conversation(item, fmt, source_chunk=chunk_val)
                     if conv is None:
