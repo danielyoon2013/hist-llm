@@ -14,7 +14,7 @@ Each prompt requests all fields needed for multi-format rendering:
 # Formats: MC-4, Open-ended
 # ---------------------------------------------------------------------------
 
-QA_PROMPT = """Create {num_items} question-answer pairs from this text for LLM training.
+QA_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} question-answer pairs for LLM training.
 
 Rules:
 1. Questions must require analytical thinking, not just fact lookup
@@ -24,8 +24,9 @@ Rules:
 5. CRITICAL — Length matching: The correct answer and ALL distractors must be similar length (1-2 sentences each). Do NOT make the correct answer longer or more detailed than the distractors.
 6. Each question must include specific historical context — names, dates, places, or events — so it is fully answerable on its own. BAD: "What happened during the battle?" GOOD: "What role did Commodore Tattnall play at the Battle of Taku Forts in 1859?"
 7. Do NOT use phrases like "according to the text", "the passage states", "mentioned above", "during the period described". Include all necessary context in the question itself.
-8. IMPORTANT — Each question must focus on a DIFFERENT topic, fact, or aspect of the text. Do NOT ask overlapping or rephrased versions of the same question.
-9. Return a JSON object with key "qa_pairs" containing an array:
+8. CRITICAL — TEMPORAL CONSTRAINT: All questions and answers must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any facts, events, outcomes, terminology, or references from after {end_year}.
+9. IMPORTANT — Each question must focus on a DIFFERENT topic, fact, or aspect of the text. Do NOT ask overlapping or rephrased versions of the same question.
+10. Return a JSON object with key "qa_pairs" containing an array:
 
 {{"qa_pairs": [{{"question": "Question 1?", "answer": "Answer 1.", "distractors": ["Wrong answer A.", "Wrong answer B.", "Wrong answer C."]}}]}}
 
@@ -38,7 +39,7 @@ Text:
 # Formats: MC-4, CoT
 # ---------------------------------------------------------------------------
 
-COT_PROMPT = """Create {num_items} complex reasoning examples from this text that demonstrate chain-of-thought thinking.
+COT_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} complex reasoning examples that demonstrate chain-of-thought thinking.
 
 Each example should have:
 1. A challenging question that requires step-by-step reasoning
@@ -47,7 +48,8 @@ Each example should have:
 4. 3 plausible but INCORRECT alternative final answers as "distractors"
 5. CRITICAL — Length matching: The correct answer and ALL distractors must be similar length (1-2 sentences). Do NOT make the correct answer longer or more detailed.
 6. Questions must be SELF-CONTAINED — answerable without the source text. Do NOT reference "the text", "the passage", "the article", or "above". Include enough context in the question itself.
-7. IMPORTANT — Each question must address a DIFFERENT aspect, argument, or theme from the text. Avoid overlapping questions.
+7. CRITICAL — TEMPORAL CONSTRAINT: All questions, reasoning, and answers must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any facts, events, outcomes, or references from after {end_year}.
+8. IMPORTANT — Each question must address a DIFFERENT aspect, argument, or theme from the text. Avoid overlapping questions.
 
 Return a JSON object with key "cot_examples" containing an array:
 
@@ -97,7 +99,7 @@ Source text:
 # Formats: MC-4, Open-ended, CoT
 # ---------------------------------------------------------------------------
 
-QUANTITATIVE_PROMPT = """Create {num_items} math word problems inspired by the numerical data in this text.
+QUANTITATIVE_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} math word problems inspired by the numerical data in this text.
 
 Requirements:
 1. Extract real numbers, dates, percentages, or quantities from the text
@@ -105,9 +107,10 @@ Requirements:
 3. Each problem should have step-by-step reasoning and a final numerical answer
 4. Problems should be grounded in the historical context of the text
 5. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
-6. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, probability, combinatorics, etc.
-7. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
-8. CRITICAL — Distractors must be the same format as the correct answer (e.g., if the answer is a number, distractors must be numbers). Make distractors plausible by using common arithmetic mistakes (off-by-one, wrong operation, rounding errors).
+6. CRITICAL — TEMPORAL CONSTRAINT: All problems must use only facts and numbers from the {start_year}-{end_year} period. Do NOT reference events or data from after {end_year}.
+7. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, probability, combinatorics, etc.
+8. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
+9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using answers to DIFFERENT but related questions (e.g., computing a different metric, using a different time span, or answering about a different entity). Do NOT generate distractors from common arithmetic mistakes.
 
 Return a JSON object:
 {{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units.", "distractors": ["The average annual increase was V units.", "The average annual increase was U units.", "The average annual increase was T units."]}}]}}
@@ -122,7 +125,7 @@ Text:
 # Already produces 4 choices — no prompt change needed
 # ---------------------------------------------------------------------------
 
-COMPLETION_PROMPT = """Create {num_items} sentence completion questions from this text in HellaSwag style.
+COMPLETION_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} sentence completion questions in HellaSwag style.
 
 The goal is to test SITUATIONAL COMPREHENSION — whether the reader can identify which completion fits the current situation, without needing any external knowledge.
 
@@ -137,7 +140,8 @@ Requirements:
    - NEVER contradict the stem directly (if stem says "not satisfied", do NOT say "expressed satisfaction")
    - NEVER be vague (no "faced many challenges" or "took a different approach")
 5. The context must be SELF-CONTAINED — it should make sense on its own without the source text. Do NOT reference "the text" or "the passage".
-6. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
+6. CRITICAL — TEMPORAL CONSTRAINT: All content must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any references from after {end_year}.
+7. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
 
 Return a JSON object:
 {{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1", "B": "completion 2", "C": "completion 3", "D": "completion 4"}}, "correct": "C"}}]}}

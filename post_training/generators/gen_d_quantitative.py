@@ -13,7 +13,8 @@ class GenDQuantitative(BaseGenerator):
     name = "gen_d_quantitative"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return QUANTITATIVE_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
+        return QUANTITATIVE_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
+                                          start_year=start_year, end_year=end_year)
 
     def parse_response(self, response):
         return response.get("problems", [])

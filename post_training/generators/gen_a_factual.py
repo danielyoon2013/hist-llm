@@ -12,7 +12,8 @@ class GenAFactual(BaseGenerator):
     name = "gen_a_factual"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return QA_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
+        return QA_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
+                                start_year=start_year, end_year=end_year)
 
     def parse_response(self, response):
         return response.get("qa_pairs", [])

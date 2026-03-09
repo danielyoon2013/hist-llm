@@ -12,7 +12,8 @@ class GenECompletion(BaseGenerator):
     name = "gen_e_completion"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return COMPLETION_PROMPT.format(num_items=self.items_per_chunk, text=chunk)
+        return COMPLETION_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
+                                        start_year=start_year, end_year=end_year)
 
     def parse_response(self, response):
         return response.get("completions", [])
