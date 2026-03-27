@@ -20,8 +20,17 @@ class GenECompletion(BaseGenerator):
 
     def format_conversation(self, item, fmt, source_chunk=None):
         context = item.get("context", "")
-        choices_dict = item.get("choices", {})
+        choices_raw = item.get("choices", {})
         correct_letter = item.get("correct", "A")
+
+        # Handle both dict {"A": "...", ...} and list ["...", "...", ...] formats
+        if isinstance(choices_raw, list):
+            if len(choices_raw) < 4:
+                return None
+            choices_dict = {l: choices_raw[i] for i, l in enumerate("ABCD") if i < len(choices_raw)}
+        else:
+            choices_dict = choices_raw
+
         correct_text = choices_dict.get(correct_letter, "")
         distractors = [choices_dict[l] for l in ("A", "B", "C", "D")
                        if l != correct_letter and choices_dict.get(l)]
