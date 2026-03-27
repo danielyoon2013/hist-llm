@@ -113,8 +113,8 @@ DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
 # Allocation is purely determined by format count: each format slot gets
 # an equal share of the target. No manual percentages to maintain.
 #
-# At 1M target with 10 total format slots:
-#   per_slot = 100,000  →  A(2)=200,000  B(2)=200,000  D(3)=300,000  ...  F(1)=100,000
+# At 1M target with 11 total format slots:
+#   per_slot = ~90,909  →  A(3)=272,727  B(2)=181,818  D(3)=272,727  ...  F(1)=90,909
 #
 # All generators are corpus-based (need document text).
 
@@ -122,7 +122,7 @@ ITEMS_PER_CALL = 2      # items requested per API call (all generators)
 CHUNKS_PER_DOC = 2      # average chunks per document (6000 chars, 300 overlap)
 
 GENERATOR_SPEC = {
-    "A": {"formats": ("mc4", "open"),        "corpus": True},
+    "A": {"formats": ("mc4", "mc2", "open"),  "corpus": True},
     "B": {"formats": ("mc4", "cot"),         "corpus": True},   # removed "open" (redundant — cot already contains the answer)
     "C": {"formats": ("mc4_passage",),       "corpus": True},   # removed "mc2_passage" (artificial 2-choice reduction)
     "D": {"formats": ("mc4", "open", "cot"), "corpus": True},

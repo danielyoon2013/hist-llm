@@ -110,7 +110,8 @@ Requirements:
 6. CRITICAL — TEMPORAL CONSTRAINT: All problems must use only facts and numbers from the {start_year}-{end_year} period. Do NOT reference events or data from after {end_year}.
 7. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, probability, combinatorics, etc.
 8. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
-9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using answers to DIFFERENT but related questions (e.g., computing a different metric, using a different time span, or answering about a different entity). Do NOT generate distractors from common arithmetic mistakes.
+9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using COMMON ARITHMETIC MISTAKES — e.g., forgetting to subtract, multiplying instead of dividing, off-by-one errors, using the wrong base, computing a partial step as the final answer. Distractors should be the kind of wrong answers a student would get by making a single calculation error.
+10. CRITICAL — All answers (correct AND distractors) must be CLEAN INTEGERS or simple fractions. Do NOT use decimal numbers like 99.9984 or 141.4295. Round to the nearest whole number if needed.
 
 Return a JSON object:
 {{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units.", "distractors": ["The average annual increase was V units.", "The average annual increase was U units.", "The average annual increase was T units."]}}]}}
@@ -133,18 +134,19 @@ Requirements:
 1. Take a sentence or short passage from the text and truncate it at a natural point
 2. Create 4 possible completions (A, B, C, D): one correct (from the text) and three wrong
 3. The correct completion should continue the SAME narrative thread as the stem
-4. Wrong completions MUST be:
-   - Grammatically correct and similar in length to the correct completion. CRITICAL: if the correct completion is one sentence, distractors must also be one sentence. Do NOT make the correct answer longer.
+4. CRITICAL — LENGTH: Each completion (correct AND wrong) must be 2-3 sentences long (40-80 words). Short single-phrase completions are NOT acceptable. Include enough narrative detail that the reader must carefully evaluate each option.
+5. Wrong completions MUST be:
+   - Grammatically correct and the SAME length as the correct completion (2-3 sentences each)
    - SITUATIONALLY OFF — they shift to a different topic, subject, or type of action that does not fit the current situation. Example: if the stem discusses a prisoner exchange, wrong completions should be about unrelated matters (tariff negotiations, troop deployments, treaty provisions) — NOT alternative prisoner outcomes.
    - The test must be answerable by comprehension alone: "which completion continues what the sentence is actually about?" A reader should NOT need historical knowledge to eliminate wrong answers.
    - NEVER contradict the stem directly (if stem says "not satisfied", do NOT say "expressed satisfaction")
    - NEVER be vague (no "faced many challenges" or "took a different approach")
-5. The context must be SELF-CONTAINED — it should make sense on its own without the source text. Do NOT reference "the text" or "the passage".
-6. CRITICAL — TEMPORAL CONSTRAINT: All content must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any references from after {end_year}.
-7. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
+6. The context must be SELF-CONTAINED — it should make sense on its own without the source text. Do NOT reference "the text" or "the passage".
+7. CRITICAL — TEMPORAL CONSTRAINT: All content must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any references from after {end_year}.
+8. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
 
 Return a JSON object:
-{{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1", "B": "completion 2", "C": "completion 3", "D": "completion 4"}}, "correct": "C"}}]}}
+{{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1 (2-3 sentences)", "B": "completion 2 (2-3 sentences)", "C": "completion 3 (2-3 sentences)", "D": "completion 4 (2-3 sentences)"}}, "correct": "C"}}]}}
 
 Text:
 {text}"""

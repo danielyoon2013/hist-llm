@@ -1,7 +1,7 @@
-"""Generator A: Factual QA — multi-format (MC-4, Open-ended)."""
+"""Generator A: Factual QA — multi-format (MC-4, MC-2, Open-ended)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, FORMAT_OPEN, render_mc, make_mc_choices,
+    BaseGenerator, FORMAT_MC4, FORMAT_MC2, FORMAT_OPEN, render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import QA_PROMPT
 
@@ -34,6 +34,20 @@ class GenAFactual(BaseGenerator):
                 return None
             letters, choices, correct = make_mc_choices(
                 answer, distractors, num_choices=4,
+                position_idx=next(self._mc_counters[fmt]),
+            )
+            user_msg = render_mc(question, letters, choices)
+            return [
+                {"role": "user", "content": user_msg},
+                {"role": "assistant", "content": correct},
+            ]
+
+        if fmt == FORMAT_MC2:
+            distractors = item.get("distractors", [])
+            if len(distractors) < 1:
+                return None
+            letters, choices, correct = make_mc_choices(
+                answer, distractors, num_choices=2,
                 position_idx=next(self._mc_counters[fmt]),
             )
             user_msg = render_mc(question, letters, choices)
