@@ -82,6 +82,8 @@ Requirements:
 - Each question must have exactly 4 answer choices (A, B, C, D)
 - Exactly one choice must be correct
 - Wrong choices should be plausible but clearly incorrect
+- CRITICAL — LENGTH MATCHING: The correct answer and ALL wrong choices must be the SAME length (similar word count and character count). Do NOT make the correct answer longer, more detailed, or more specific than the wrong choices. If the correct answer is 4-6 words, all wrong choices must also be 4-6 words. This is essential for a fair evaluation.
+- CRITICAL — STYLE MATCHING: All four choices must use the same grammatical structure and level of specificity. Do NOT add qualifiers, parenthetical details, or extra context only to the correct answer.
 - Questions should span different years after {end_year} (vary the time range)
 - Questions should cover different sub-topics within {domain}
 - This is batch {batch_index + 1} of {REQUESTS_PER_DOMAIN} for this domain — avoid the most obvious questions and cover diverse sub-topics
@@ -269,6 +271,24 @@ def process_generation_results(periods):
             except (json.JSONDecodeError, KeyError, TypeError):
                 parse_errors += 1
 
+        # Filter out questions where the correct answer length differs
+        # significantly from the distractor average (removes length shortcut)
+        pre_filter = len(all_questions)
+        filtered_questions = []
+        for q in all_questions:
+            correct_text = q["choices"][q["answer"]]
+            distractor_texts = [q["choices"][i] for i in range(4) if i != q["answer"]]
+            correct_len = len(correct_text)
+            avg_distractor_len = sum(len(d) for d in distractor_texts) / len(distractor_texts)
+            # Reject if correct answer is >50% longer or shorter than avg distractor
+            if avg_distractor_len > 0:
+                ratio = correct_len / avg_distractor_len
+                if ratio > 1.5 or ratio < 0.67:
+                    continue
+            filtered_questions.append(q)
+        all_questions = filtered_questions
+        length_rejected = pre_filter - len(all_questions)
+
         # Shuffle answer positions to remove GPT-4.1's bias toward position A
         all_questions = shuffle_questions(all_questions)
 
@@ -289,6 +309,7 @@ def process_generation_results(periods):
 
         print(f"\n{period} (end year: {end_year}):")
         print(f"  Total questions: {len(all_questions):,} (target: {QUESTIONS_PER_PERIOD:,})")
+        print(f"  Length-filtered: {length_rejected:,} rejected (correct answer >50% longer/shorter than distractors)")
         print(f"  Parse errors: {parse_errors}")
         print(f"  Output: {output_path}")
         print(f"  Answer position distribution (should be ~25% each):")
