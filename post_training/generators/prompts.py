@@ -26,9 +26,10 @@ Rules:
 7. Do NOT use phrases like "according to the text", "the passage states", "mentioned above", "during the period described". Include all necessary context in the question itself.
 8. CRITICAL — TEMPORAL CONSTRAINT: All questions and answers must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any facts, events, outcomes, terminology, or references from after {end_year}.
 9. IMPORTANT — Each question must focus on a DIFFERENT topic, fact, or aspect of the text. Do NOT ask overlapping or rephrased versions of the same question.
-10. Return a JSON object with key "qa_pairs" containing an array:
+10. For each pair, provide detailed step-by-step reasoning (3-5 sentences) explaining WHY the answer is correct. Show the thought process: what the question asks, what evidence supports the answer, and why alternatives are wrong.
+11. Return a JSON object with key "qa_pairs" containing an array:
 
-{{"qa_pairs": [{{"question": "Question 1?", "answer": "Answer 1.", "distractors": ["Wrong answer A.", "Wrong answer B.", "Wrong answer C."]}}]}}
+{{"qa_pairs": [{{"question": "Question 1?", "answer": "Answer 1.", "reasoning": "First, the question asks about X. The text states Y, which directly supports this answer. Alternative interpretations such as Z are incorrect because...", "distractors": ["Wrong answer A.", "Wrong answer B.", "Wrong answer C."]}}]}}
 
 Text:
 {text}"""
@@ -43,7 +44,7 @@ COT_PROMPT = """You are given text from a historical document published between 
 
 Each example should have:
 1. A challenging question that requires step-by-step reasoning
-2. Detailed reasoning steps that break down the problem
+2. Detailed reasoning steps (5-8 steps, each 1-2 sentences) that break down the problem thoroughly. Explore the question from multiple angles, consider why wrong answers might seem plausible, and build toward the conclusion logically.
 3. A concise final answer
 4. 3 plausible but INCORRECT alternative final answers as "distractors"
 5. CRITICAL — Length matching: The correct answer and ALL distractors must be similar length (1-2 sentences). Do NOT make the correct answer longer or more detailed.
@@ -84,9 +85,10 @@ PART 2 — Create {num_items} multiple-choice questions about your passage:
 4. Wrong choices should be plausible, clearly incorrect based on the passage, and similar in length to the correct choice
 5. Include a mix of difficulty levels
 6. Each question must test a DIFFERENT aspect of the passage — one about the main idea, one about a specific detail, one requiring inference, etc.
+7. For each question, provide step-by-step reasoning (3-5 sentences) explaining why the correct answer is right and how it is supported by the passage.
 
 Return a JSON object:
-{{"questions": [{{"passage": "Your clean 150-300 word passage here.", "question": "What does the passage suggest about...?", "choices": {{"A": "Choice 1", "B": "Choice 2", "C": "Choice 3", "D": "Choice 4"}}, "correct": "B"}}]}}
+{{"questions": [{{"passage": "Your clean 150-300 word passage here.", "question": "What does the passage suggest about...?", "choices": {{"A": "Choice 1", "B": "Choice 2", "C": "Choice 3", "D": "Choice 4"}}, "correct": "B", "reasoning": "The passage states X in the second paragraph, which directly supports choice B. Choice A contradicts the passage because..."}}]}}
 
 IMPORTANT: The "passage" field must be IDENTICAL across all items — write it once and repeat it in each item.
 
@@ -145,8 +147,10 @@ Requirements:
 7. CRITICAL — TEMPORAL CONSTRAINT: All content must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any references from after {end_year}.
 8. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
 
+For each completion, provide step-by-step reasoning (3-5 sentences) explaining why the correct completion fits and why the others don't.
+
 Return a JSON object:
-{{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1 (2-3 sentences)", "B": "completion 2 (2-3 sentences)", "C": "completion 3 (2-3 sentences)", "D": "completion 4 (2-3 sentences)"}}, "correct": "C"}}]}}
+{{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1 (2-3 sentences)", "B": "completion 2 (2-3 sentences)", "C": "completion 3 (2-3 sentences)", "D": "completion 4 (2-3 sentences)"}}, "correct": "C", "reasoning": "The context discusses X, so the correct completion continues this topic. Completion A shifts to an unrelated subject, while completion C maintains the narrative thread about X."}}]}}
 
 Text:
 {text}"""

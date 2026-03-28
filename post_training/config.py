@@ -113,21 +113,22 @@ DEFAULT_TEST_RATIO = 0.05       # 5% holdout for training-loss monitoring
 # Allocation is purely determined by format count: each format slot gets
 # an equal share of the target. No manual percentages to maintain.
 #
-# At 1M target with 11 total format slots:
-#   per_slot = ~90,909  →  A(3)=272,727  B(2)=181,818  D(3)=272,727  ...  F(1)=90,909
+# At 1M target with 19 total format slots:
+#   per_slot = ~52,632  →  A(4)=210,526  B(3)=157,895  ...  F(3)=157,895
 #
 # All generators are corpus-based (need document text).
+# MC ~37%, non-MC ~63% — reduces position bias from over-training on letter-picking.
 
 ITEMS_PER_CALL = 2      # items requested per API call (all generators)
 CHUNKS_PER_DOC = 2      # average chunks per document (6000 chars, 300 overlap)
 
 GENERATOR_SPEC = {
-    "A": {"formats": ("mc4", "mc2", "open"),  "corpus": True},
-    "B": {"formats": ("mc4", "cot"),         "corpus": True},   # removed "open" (redundant — cot already contains the answer)
-    "C": {"formats": ("mc4_passage",),       "corpus": True},   # removed "mc2_passage" (artificial 2-choice reduction)
-    "D": {"formats": ("mc4", "open", "cot"), "corpus": True},
-    "E": {"formats": ("mc4",),              "corpus": True},   # removed "mc2" (discards 2 distractors from mc4)
-    "F": {"formats": ("mc4_passage",),       "corpus": True},
+    "A": {"formats": ("mc4", "mc2", "open", "cot"), "corpus": True},
+    "B": {"formats": ("mc4", "open", "cot"),        "corpus": True},
+    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True},
+    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True},
+    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True},
+    "F": {"formats": ("mc4_passage", "open", "cot"), "corpus": True},
 }
 
 

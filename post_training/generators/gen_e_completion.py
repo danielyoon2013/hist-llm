@@ -1,7 +1,8 @@
-"""Generator E: Sentence Completion — multi-format (MC-4)."""
+"""Generator E: Sentence Completion — multi-format (MC-4, Open-ended, CoT)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, render_mc, make_mc_choices,
+    BaseGenerator, FORMAT_MC4, FORMAT_OPEN, FORMAT_COT,
+    render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import COMPLETION_PROMPT
 
@@ -46,6 +47,24 @@ class GenECompletion(BaseGenerator):
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
+            ]
+
+        if fmt == FORMAT_OPEN:
+            if not correct_text:
+                return None
+            return [
+                {"role": "user", "content": f"Complete the following: {context}"},
+                {"role": "assistant", "content": correct_text},
+            ]
+
+        if fmt == FORMAT_COT:
+            reasoning = item.get("reasoning", "")
+            if not correct_text or not reasoning:
+                return None
+            content = f"<think>\n{reasoning}\n</think>\n{correct_text}"
+            return [
+                {"role": "user", "content": f"Complete the following: {context}"},
+                {"role": "assistant", "content": content},
             ]
 
         return None

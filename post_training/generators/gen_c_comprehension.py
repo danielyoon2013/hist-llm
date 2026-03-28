@@ -1,7 +1,7 @@
-"""Generator C: Reading Comprehension — passage-based format (MC-4+Passage)."""
+"""Generator C: Reading Comprehension — multi-format (MC-4+Passage, Open-ended, CoT)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4_PASSAGE,
+    BaseGenerator, FORMAT_MC4_PASSAGE, FORMAT_OPEN, FORMAT_COT,
     render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import COMPREHENSION_PROMPT
@@ -48,6 +48,32 @@ class GenCComprehension(BaseGenerator):
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
+            ]
+
+        if fmt == FORMAT_OPEN:
+            if not passage or not correct_text:
+                return None
+            user_msg = (
+                f"Read the following passage and answer the question.\n\n"
+                f"Passage: {passage}\n\n{question}"
+            )
+            return [
+                {"role": "user", "content": user_msg},
+                {"role": "assistant", "content": correct_text},
+            ]
+
+        if fmt == FORMAT_COT:
+            reasoning = item.get("reasoning", "")
+            if not passage or not correct_text or not reasoning:
+                return None
+            user_msg = (
+                f"Read the following passage and answer the question.\n\n"
+                f"Passage: {passage}\n\n{question}"
+            )
+            content = f"<think>\n{reasoning}\n</think>\n{correct_text}"
+            return [
+                {"role": "user", "content": user_msg},
+                {"role": "assistant", "content": content},
             ]
 
         return None

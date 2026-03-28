@@ -1,7 +1,8 @@
-"""Generator A: Factual QA — multi-format (MC-4, MC-2, Open-ended)."""
+"""Generator A: Factual QA — multi-format (MC-4, MC-2, Open-ended, CoT)."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, FORMAT_MC2, FORMAT_OPEN, render_mc, make_mc_choices,
+    BaseGenerator, FORMAT_MC4, FORMAT_MC2, FORMAT_OPEN, FORMAT_COT,
+    render_mc, make_mc_choices,
 )
 from src.post_training.generators.prompts import QA_PROMPT
 
@@ -54,6 +55,16 @@ class GenAFactual(BaseGenerator):
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
+            ]
+
+        if fmt == FORMAT_COT:
+            reasoning = item.get("reasoning", "")
+            if not reasoning:
+                return None
+            content = f"<think>\n{reasoning}\n</think>\n{answer}"
+            return [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": content},
             ]
 
         return None
