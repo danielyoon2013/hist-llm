@@ -101,22 +101,23 @@ Source text:
 # Formats: MC-4, Open-ended, CoT
 # ---------------------------------------------------------------------------
 
-QUANTITATIVE_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} math word problems inspired by the numerical data in this text.
+QUANTITATIVE_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} multi-step math word problems inspired by the numerical data in this text.
 
 Requirements:
 1. Extract real numbers, dates, percentages, or quantities from the text
-2. Create word problems that require mathematical reasoning (arithmetic, percentages, comparisons, rates, probability/combinatorics when applicable)
-3. Each problem should have step-by-step reasoning and a final numerical answer
-4. Problems should be grounded in the historical context of the text
-5. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
-6. CRITICAL — TEMPORAL CONSTRAINT: All problems must use only facts and numbers from the {start_year}-{end_year} period. Do NOT reference events or data from after {end_year}.
-7. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, probability, combinatorics, etc.
-8. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
-9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using COMMON ARITHMETIC MISTAKES — e.g., forgetting to subtract, multiplying instead of dividing, off-by-one errors, using the wrong base, computing a partial step as the final answer. Distractors should be the kind of wrong answers a student would get by making a single calculation error.
-10. CRITICAL — All answers (correct AND distractors) must be CLEAN INTEGERS or simple fractions. Do NOT use decimal numbers like 99.9984 or 141.4295. Round to the nearest whole number if needed.
+2. Create word problems that require MULTI-STEP mathematical reasoning — each problem must require 3-5 chained calculations to solve. Do NOT create single-step problems (like just computing one percentage). Build problems where each step depends on the previous one.
+3. Example of a good multi-step problem: "A factory produced X widgets in 1925 and Y in 1930. If each widget costs Z dollars, and the factory kept 40% of revenue as profit, how much total profit did the factory earn from the increase in production over this period?" (requires: compute increase, multiply by price, compute 40%)
+4. Each problem must have detailed step-by-step reasoning showing 3-5 computation steps, where each step clearly states the operation and result.
+5. Problems should be grounded in the historical context of the text
+6. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
+7. CRITICAL — TEMPORAL CONSTRAINT: All problems must use only facts and numbers from the {start_year}-{end_year} period. Do NOT reference events or data from after {end_year}.
+8. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, rates, unit conversion, profit/loss, averages, etc.
+9. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
+10. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using COMMON ARITHMETIC MISTAKES — e.g., forgetting to subtract, multiplying instead of dividing, off-by-one errors, using the wrong base, computing a partial step as the final answer. Distractors should be the kind of wrong answers a student would get by making a single calculation error.
+11. CRITICAL — All answers (correct AND distractors) must be CLEAN INTEGERS or simple fractions. Do NOT use decimal numbers like 99.9984 or 141.4295. Round to the nearest whole number if needed.
 
 Return a JSON object:
-{{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units.", "distractors": ["The average annual increase was V units.", "The average annual increase was U units.", "The average annual increase was T units."]}}]}}
+{{"problems": [{{"question": "A factory produced 500 widgets in 1925 and 800 in 1930. If each widget sold for $3 and the factory kept 40% of revenue as profit, how much profit came from the additional production?", "reasoning": "Step 1: Calculate the increase in production: 800 - 500 = 300 widgets\\nStep 2: Calculate revenue from additional widgets: 300 * $3 = $900\\nStep 3: Calculate profit at 40%: $900 * 0.40 = $360", "answer": "$360", "distractors": ["$900", "$240", "$540"]}}]}}
 
 Text:
 {text}"""
