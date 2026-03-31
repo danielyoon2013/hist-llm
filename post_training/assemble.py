@@ -253,12 +253,16 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
 
     train_by_gen = defaultdict(list)   # gen_filename -> [bare_messages]
     test_convs = []                    # [{messages, letters}] for eval
+    test_by_gen = defaultdict(list)    # generator_letter -> [{messages, letters}]
 
     train_count = 0
     test_count = 0
     test_skipped_non_mc = 0
 
     for gen_name, convs in generator_data.items():
+        # Extract generator letter from filename (e.g. "gen_a_factual_mc4" -> "A")
+        gen_letter = gen_name.split("_")[1].upper() if "_" in gen_name else "X"
+
         for conv in convs:
             doc = _extract_doc_name(conv)
             fmt = _extract_format(conv)
@@ -266,10 +270,12 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
 
             if doc in test_docs:
                 if fmt in MC_FORMATS:
-                    test_convs.append({
+                    entry = {
                         "messages": messages,
                         "letters": ["A", "B", "C", "D"],
-                    })
+                    }
+                    test_convs.append(entry)
+                    test_by_gen[gen_letter].append(entry)
                     test_count += 1
                 else:
                     test_skipped_non_mc += 1
@@ -292,14 +298,19 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
     # SFT = proportional subsample from train
     sft = proportional_subsample(train_by_gen, sft_size, seed=SEED + 2)
 
-    # Shuffle test
+    # Shuffle test (combined and per-generator)
     rng3 = random.Random(SEED + 3)
     rng3.shuffle(test_convs)
+    for letter in test_by_gen:
+        rng_gen = random.Random(SEED + 3 + ord(letter))
+        rng_gen.shuffle(test_by_gen[letter])
 
     print(f"\nSplit results:")
     print(f"  Mid-train: {len(midtrain):,} (all formats from train docs)")
     print(f"  SFT:       {len(sft):,} (proportional subsample)")
     print(f"  Test:      {len(test_convs):,} (MC-only from test docs)")
+    for letter in sorted(test_by_gen.keys()):
+        print(f"    Gen {letter}: {len(test_by_gen[letter]):,}")
     print(f"  Discarded: {test_skipped_non_mc:,} (non-MC from test docs)")
 
     # ------------------------------------------------------------------
@@ -318,10 +329,17 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
         write_jsonl(sft, str(sft_path), validate=False)
         write_jsonl(test_convs, str(test_path), validate=False)
 
+        # Per-generator test files for granular eval
+        for letter in sorted(test_by_gen.keys()):
+            gen_path = test_dir / f"internal_mc_{letter}.jsonl"
+            write_jsonl(test_by_gen[letter], str(gen_path), validate=False)
+
         print(f"\nWritten:")
         print(f"  {midtrain_path}")
         print(f"  {sft_path}")
         print(f"  {test_path}")
+        for letter in sorted(test_by_gen.keys()):
+            print(f"  {test_dir / f'internal_mc_{letter}.jsonl'}")
 
     stats = {
         "input_dir": str(input_dir),
