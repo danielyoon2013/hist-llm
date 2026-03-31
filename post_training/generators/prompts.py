@@ -21,7 +21,7 @@ Rules:
 2. Answers must be directly supported by the text
 3. Vary question types: cause-effect, comparison, analysis, inference, summary
 4. For each pair, provide 3 plausible but INCORRECT alternative answers as "distractors"
-5. CRITICAL — Length matching: The correct answer and ALL distractors must be similar length (1-2 sentences each). Do NOT make the correct answer longer or more detailed than the distractors.
+5. CRITICAL — Keep answers SHORT: The correct answer and ALL distractors must be concise phrases (2-8 words each, like "a lightning strike" or "increased tariff revenue"). Do NOT write full sentences. Do NOT make the correct answer longer or more detailed than the distractors.
 6. Each question must include specific historical context — names, dates, places, or events — so it is fully answerable on its own. BAD: "What happened during the battle?" GOOD: "What role did Commodore Tattnall play at the Battle of Taku Forts in 1859?"
 7. Do NOT use phrases like "according to the text", "the passage states", "mentioned above", "during the period described". Include all necessary context in the question itself.
 8. CRITICAL — TEMPORAL CONSTRAINT: All questions and answers must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any facts, events, outcomes, terminology, or references from after {end_year}.
@@ -115,8 +115,9 @@ Requirements:
 9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using COMMON ARITHMETIC MISTAKES — e.g., forgetting to subtract, multiplying instead of dividing, off-by-one errors, using the wrong base, computing a partial step as the final answer. Distractors should be the kind of wrong answers a student would get by making a single calculation error.
 10. CRITICAL — All answers (correct AND distractors) must be CLEAN INTEGERS or simple fractions. Do NOT use decimal numbers like 99.9984 or 141.4295. Round to the nearest whole number if needed.
 
-Return a JSON object:
-{{"problems": [{{"question": "If production increased from X to Y between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: Y - X = Z\\nStep 2: Divide by number of years: Z / 10 = W", "answer": "The average annual increase was W units.", "distractors": ["The average annual increase was V units.", "The average annual increase was U units.", "The average annual increase was T units."]}}]}}
+Return a JSON object. IMPORTANT: the "answer" and "distractors" must be BARE NUMBERS ONLY (e.g. "360", "25%", "$900"). Do NOT wrap them in sentences.
+
+{{"problems": [{{"question": "If production increased from 500 to 800 between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: 800 - 500 = 300\\nStep 2: Divide by number of years: 300 / 10 = 30", "answer": "30", "distractors": ["300", "80", "15"]}}]}}
 
 Text:
 {text}"""
