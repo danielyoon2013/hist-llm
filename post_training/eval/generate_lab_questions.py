@@ -84,6 +84,7 @@ Requirements:
 - Wrong choices should be plausible but clearly incorrect
 - CRITICAL — LENGTH MATCHING: The correct answer and ALL wrong choices must be the SAME length (similar word count and character count). Do NOT make the correct answer longer, more detailed, or more specific than the wrong choices. If the correct answer is 4-6 words, all wrong choices must also be 4-6 words. This is essential for a fair evaluation.
 - CRITICAL — STYLE MATCHING: All four choices must use the same grammatical structure and level of specificity. Do NOT add qualifiers, parenthetical details, or extra context only to the correct answer.
+- CRITICAL — NO KEYWORD LEAKAGE: The correct answer must NOT contain any distinctive words from the question. If the question mentions "Voting Rights", the correct answer cannot say "Voting Rights Act" — it must paraphrase. If the question mentions "Gezi Park", the correct answer cannot say "Gezi Park". The correct answer must be identifiable only through real knowledge of the event, NOT through lexical overlap with the question. Use synonyms, paraphrases, or describe the event without naming it. BAD: Q: "What law signed in 1965 protected voting rights?" → "Voting Rights Act" (keyword leakage). GOOD: Q: "What law signed in 1965 protected voting rights?" → "Federal civil rights legislation" (no overlap).
 - Questions should span different years after {end_year} (vary the time range)
 - Questions should cover different sub-topics within {domain}
 - This is batch {batch_index + 1} of {REQUESTS_PER_DOMAIN} for this domain — avoid the most obvious questions and cover diverse sub-topics
@@ -289,6 +290,58 @@ def process_generation_results(periods):
         all_questions = filtered_questions
         length_rejected = pre_filter - len(all_questions)
 
+        # Filter out questions with keyword leakage between question and correct answer.
+        # Lexical overlap lets a model "answer" by keyword matching, which is not
+        # a real test of knowledge. Reject if any distinctive (>=5 chars, non-stopword,
+        # non-year, non-grammar-word) token in the correct answer also appears in the question.
+        import re as _re
+        STOPWORDS = {
+            "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by",
+            "for", "with", "from", "as", "is", "was", "were", "are", "be", "been",
+            "this", "that", "these", "those", "it", "its", "their", "his", "her",
+            "which", "who", "what", "when", "where", "why", "how", "would",
+            "could", "should", "after", "before", "during", "first", "year",
+            "years", "new", "law", "act", "became", "ended", "began", "started",
+            "made", "had", "has", "have", "having", "make", "makes", "did", "does",
+            "do", "doing", "go", "going", "went", "gone", "come", "came", "coming",
+            "year", "month", "decade", "century", "country", "nation", "world",
+            "international", "global", "national", "state", "states", "people",
+            "first", "second", "third", "major", "main", "early", "late", "later",
+            "thousands", "millions", "many", "much", "most", "more", "less",
+            "called", "known", "named", "considered", "regarded", "described",
+            "introduced", "created", "established", "formed", "founded", "developed",
+            "discovered", "invented", "produced", "released", "launched", "published",
+            "signed", "passed", "enacted", "implemented", "adopted", "approved",
+            "held", "took", "taking", "place", "during", "after", "before",
+        }
+
+        def _tokens(text):
+            tokens = set()
+            for t in _re.findall(r"\w+", text):
+                t = t.lower().strip(".,!?;:'\"()")
+                if len(t) < 5:
+                    continue
+                if t in STOPWORDS:
+                    continue
+                # Skip year-like tokens (4-digit numbers in plausible year range)
+                if t.isdigit():
+                    continue
+                tokens.add(t)
+            return tokens
+
+        pre_overlap = len(all_questions)
+        filtered_questions = []
+        for q in all_questions:
+            correct_text = q["choices"][q["answer"]]
+            q_tokens = _tokens(q["question"])
+            a_tokens = _tokens(correct_text)
+            shared = q_tokens & a_tokens
+            if shared:
+                continue  # keyword leakage detected
+            filtered_questions.append(q)
+        all_questions = filtered_questions
+        overlap_rejected = pre_overlap - len(all_questions)
+
         # Shuffle answer positions to remove GPT-4.1's bias toward position A
         all_questions = shuffle_questions(all_questions)
 
@@ -310,6 +363,7 @@ def process_generation_results(periods):
         print(f"\n{period} (end year: {end_year}):")
         print(f"  Total questions: {len(all_questions):,} (target: {QUESTIONS_PER_PERIOD:,})")
         print(f"  Length-filtered: {length_rejected:,} rejected (correct answer >50% longer/shorter than distractors)")
+        print(f"  Overlap-filtered: {overlap_rejected:,} rejected (correct answer shares distinctive keywords with question)")
         print(f"  Parse errors: {parse_errors}")
         print(f"  Output: {output_path}")
         print(f"  Answer position distribution (should be ~25% each):")
