@@ -17,6 +17,7 @@ Usage:
 """
 
 import os
+import re
 import random
 import argparse
 from pathlib import Path
@@ -33,6 +34,42 @@ SEED = 42
 
 # MC format keys — only these go into the test split
 MC_FORMATS = {"mc4", "mc4_passage"}
+
+# Temporal contamination filter: detect post-1949 year references in training text
+# Catches cases where GPT-4o-mini ignored the temporal constraint
+_YEAR_PATTERN = re.compile(r'\b(19[5-9]\d|20\d\d)\b')
+_YEAR_CONTEXT_BEFORE = re.compile(
+    r'\b(in|since|by|after|before|during|until|from|of|the year|early|late|mid)\s*$',
+    re.IGNORECASE,
+)
+
+
+def _has_post_period_year(text, end_year=1949):
+    """Return True if text contains a year > end_year used as a date reference.
+
+    Looks for years 1950-2099 with date-like context (preceded by 'in', 'since',
+    'after', 'during', etc., or followed by 's' for decades like '1970s'). Avoids
+    false positives where the number happens to be a math answer.
+    """
+    for m in _YEAR_PATTERN.finditer(text):
+        year = int(m.group(1))
+        if year <= end_year:
+            continue
+        before = text[max(0, m.start() - 30):m.start()]
+        after = text[m.end():m.end() + 5]
+        if _YEAR_CONTEXT_BEFORE.search(before):
+            return True
+        if after[:1] == 's':  # 1970s
+            return True
+        if re.match(r'[\-\s]\d{4}\b', after):  # 1972-1985 range
+            return True
+    return False
+
+
+def _conv_text(conv):
+    """Extract all text from a conversation for filtering."""
+    msgs = conv if isinstance(conv, list) else conv.get('messages', conv)
+    return ' '.join([m.get('content', '') for m in msgs])
 
 
 def find_input_dir(paths):
@@ -219,6 +256,29 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
     for name, convs in sorted(generator_data.items()):
         print(f"  {name}: {len(convs):,} conversations")
         total_all += len(convs)
+
+    # ------------------------------------------------------------------
+    # Filter temporal contamination: drop examples mentioning post-period years
+    # ------------------------------------------------------------------
+    end_year = PERIODS[period][1]
+    print(f"\nFiltering temporal contamination (year > {end_year}):")
+    pre_filter_total = 0
+    post_filter_total = 0
+    for name in sorted(generator_data.keys()):
+        before = len(generator_data[name])
+        generator_data[name] = [
+            c for c in generator_data[name]
+            if not _has_post_period_year(_conv_text(c), end_year)
+        ]
+        after = len(generator_data[name])
+        rejected = before - after
+        pre_filter_total += before
+        post_filter_total += after
+        if rejected > 0:
+            print(f"  {name}: {before:,} -> {after:,} ({rejected:,} rejected)")
+    print(f"  Total: {pre_filter_total:,} -> {post_filter_total:,} "
+          f"({pre_filter_total - post_filter_total:,} rejected, "
+          f"{(pre_filter_total - post_filter_total)/pre_filter_total:.1%})")
 
     # ------------------------------------------------------------------
     # Downsample to target (cap each format slot equally)
