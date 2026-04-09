@@ -77,28 +77,50 @@ def build_generation_prompt(end_year, domain, batch_index):
     """
     return f"""Generate exactly {QUESTIONS_PER_REQUEST} multiple-choice questions about notable events, discoveries, or developments in the domain of **{domain}** that occurred AFTER the year {end_year}.
 
+These questions test whether a model has GENUINE FACTUAL KNOWLEDGE of post-{end_year} events, not whether it can read English. Therefore the questions must require specific recall of named entities, NOT paraphrase matching.
+
 Requirements:
 - Every question must test knowledge about something that happened or was created/discovered AFTER {end_year}
 - Each question must have exactly 4 answer choices (A, B, C, D)
 - Exactly one choice must be correct
-- Wrong choices should be plausible but clearly incorrect
-- CRITICAL — LENGTH MATCHING: The correct answer and ALL wrong choices must be the SAME length (similar word count and character count). Do NOT make the correct answer longer, more detailed, or more specific than the wrong choices. If the correct answer is 4-6 words, all wrong choices must also be 4-6 words. This is essential for a fair evaluation.
-- CRITICAL — STYLE MATCHING: All four choices must use the same grammatical structure and level of specificity. Do NOT add qualifiers, parenthetical details, or extra context only to the correct answer.
-- CRITICAL — NO KEYWORD LEAKAGE: The correct answer must NOT contain any distinctive words from the question. If the question mentions "Voting Rights", the correct answer cannot say "Voting Rights Act" — it must paraphrase. If the question mentions "Gezi Park", the correct answer cannot say "Gezi Park". The correct answer must be identifiable only through real knowledge of the event, NOT through lexical overlap with the question. Use synonyms, paraphrases, or describe the event without naming it. BAD: Q: "What law signed in 1965 protected voting rights?" → "Voting Rights Act" (keyword leakage). GOOD: Q: "What law signed in 1965 protected voting rights?" → "Federal civil rights legislation" (no overlap).
+
+CRITICAL — ANSWER FORMAT: Each correct answer MUST be one of:
+  (a) A specific PERSON'S NAME (e.g., "Helmut Kohl", "Margaret Thatcher")
+  (b) A specific PLACE (city, country, building, e.g., "Berlin", "Geneva", "Chernobyl")
+  (c) A specific ORGANIZATION (e.g., "OPEC", "Greenpeace", "European Central Bank")
+  (d) A specific DATE or YEAR (e.g., "1973", "October 1962")
+  (e) A specific NUMBER, statistic, or measurement (e.g., "8.4 million", "42 percent")
+  (f) A specific NAMED EVENT, treaty, or work (e.g., "Treaty of Maastricht", "Apollo 11", "Sgt. Pepper's")
+NEVER use generic descriptive phrases like "Federal civil rights legislation" or "Fall of a fortified barrier". The answer must be a NAME, NOT a description.
+
+CRITICAL — DESCRIPTIVE QUESTIONS ARE FORBIDDEN: The question must NOT describe the answer in any way. The model must KNOW the fact, not infer it from the wording.
+  BAD: "Which European city's wall fell in November 1989, ending Cold War divisions?" — too descriptive, "wall fell" gives away "Berlin"
+  GOOD: "Which 1989 event marked a turning point in the Cold War?" — answer choices are city names, model must know
+  BAD: "Which 1991 treaty established the European Union?" — "European Union" is in the question
+  GOOD: "Which treaty signed in Maastricht in February 1992 reshaped European political integration?" — answer is the treaty name
+  Even better: "Which European treaty took effect in November 1993?" — answer choices are treaty names
+
+CRITICAL — DISTRACTOR QUALITY: All four choices must be the SAME TYPE of named entity. If the answer is a person's name, all distractors must be plausible person names from the same era and field. If the answer is a city, all distractors must be plausible cities. The distractors must be REAL named entities that a reader would have to actively rule out, not random nonsense.
+  BAD: Choices = ["Helmut Kohl", "A new policy", "Some treaty", "Discovery"]
+  GOOD: Choices = ["Helmut Kohl", "Helmut Schmidt", "Willy Brandt", "Konrad Adenauer"]
+
+CRITICAL — LENGTH MATCHING: The correct answer and ALL wrong choices must be the SAME length (similar word count and character count). Names should be similar length (e.g., all 1-3 words). Do NOT make the correct answer longer or more detailed.
+
+CRITICAL — NO KEYWORD LEAKAGE: The correct answer must NOT share any distinctive words with the question (years, proper nouns, technical terms).
+
 - Questions should span different years after {end_year} (vary the time range)
 - Questions should cover different sub-topics within {domain}
 - This is batch {batch_index + 1} of {REQUESTS_PER_DOMAIN} for this domain — avoid the most obvious questions and cover diverse sub-topics
-- Include the approximate year of the event in each question
 
 Respond with JSON in this exact format:
 {{
   "questions": [
     {{
-      "question": "The question text here?",
-      "choices": ["Choice A", "Choice B", "Choice C", "Choice D"],
+      "question": "Which treaty took effect in November 1993?",
+      "choices": ["Treaty of Maastricht", "Treaty of Rome", "Treaty of Lisbon", "Treaty of Nice"],
       "answer": 0,
       "domain": "{domain}",
-      "event_year": 2005
+      "event_year": 1993
     }}
   ]
 }}
@@ -281,10 +303,10 @@ def process_generation_results(periods):
             distractor_texts = [q["choices"][i] for i in range(4) if i != q["answer"]]
             correct_len = len(correct_text)
             avg_distractor_len = sum(len(d) for d in distractor_texts) / len(distractor_texts)
-            # Reject if correct answer is >50% longer or shorter than avg distractor
+            # Tighter: reject if correct answer is >20% longer or shorter than avg distractor
             if avg_distractor_len > 0:
                 ratio = correct_len / avg_distractor_len
-                if ratio > 1.5 or ratio < 0.67:
+                if ratio > 1.2 or ratio < 0.83:
                     continue
             filtered_questions.append(q)
         all_questions = filtered_questions
@@ -342,6 +364,37 @@ def process_generation_results(periods):
         all_questions = filtered_questions
         overlap_rejected = pre_overlap - len(all_questions)
 
+        # Paraphrase filter: drop questions that a sentence-embedding similarity
+        # baseline can solve. These questions can be answered by reading skill
+        # alone (the correct choice paraphrases the question), not by knowledge.
+        pre_paraphrase = len(all_questions)
+        try:
+            from sentence_transformers import SentenceTransformer
+            import numpy as np
+            print(f"  Computing paraphrase filter (this may take a minute)...")
+            st_model = SentenceTransformer('all-MiniLM-L6-v2')
+            questions = [q["question"] for q in all_questions]
+            choices_flat = []
+            for q in all_questions:
+                choices_flat.extend(q["choices"])
+            q_emb = st_model.encode(questions, show_progress_bar=False, batch_size=64)
+            c_emb = st_model.encode(choices_flat, show_progress_bar=False, batch_size=128)
+            q_norm = q_emb / np.linalg.norm(q_emb, axis=1, keepdims=True)
+            c_norm = c_emb / np.linalg.norm(c_emb, axis=1, keepdims=True)
+
+            kept = []
+            for i, q in enumerate(all_questions):
+                qe = q_norm[i]
+                ce = c_norm[i*4:(i+1)*4]
+                sims = ce @ qe
+                pred = int(np.argmax(sims))
+                if pred != q["answer"]:
+                    kept.append(q)  # paraphrase matcher couldn't solve it -> keep
+            all_questions = kept
+        except ImportError:
+            print(f"  WARNING: sentence_transformers not installed, skipping paraphrase filter")
+        paraphrase_rejected = pre_paraphrase - len(all_questions)
+
         # Shuffle answer positions to remove GPT-4.1's bias toward position A
         all_questions = shuffle_questions(all_questions)
 
@@ -362,8 +415,9 @@ def process_generation_results(periods):
 
         print(f"\n{period} (end year: {end_year}):")
         print(f"  Total questions: {len(all_questions):,} (target: {QUESTIONS_PER_PERIOD:,})")
-        print(f"  Length-filtered: {length_rejected:,} rejected (correct answer >50% longer/shorter than distractors)")
-        print(f"  Overlap-filtered: {overlap_rejected:,} rejected (correct answer shares distinctive keywords with question)")
+        print(f"  Length-filtered:    {length_rejected:,} rejected (correct >20% longer/shorter than distractors)")
+        print(f"  Overlap-filtered:   {overlap_rejected:,} rejected (correct shares distinctive keywords with question)")
+        print(f"  Paraphrase-filtered: {paraphrase_rejected:,} rejected (sentence-bert solves them by similarity)")
         print(f"  Parse errors: {parse_errors}")
         print(f"  Output: {output_path}")
         print(f"  Answer position distribution (should be ~25% each):")
