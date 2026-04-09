@@ -341,11 +341,11 @@ def process_generation_results(periods):
             tokens = set()
             for t in _re.findall(r"\w+", text):
                 t = t.lower().strip(".,!?;:'\"()")
-                if len(t) < 5:
+                if len(t) < 4:  # tightened from 5 -> 4 to catch "drug", "city", "year"
                     continue
                 if t in STOPWORDS:
                     continue
-                # Skip year-like tokens (4-digit numbers in plausible year range)
+                # Skip year-like tokens here; handled by separate year filter below
                 if t.isdigit():
                     continue
                 tokens.add(t)
@@ -363,6 +363,37 @@ def process_generation_results(periods):
             filtered_questions.append(q)
         all_questions = filtered_questions
         overlap_rejected = pre_overlap - len(all_questions)
+
+        # Year overlap filter: drop if any year appears in both question and correct answer
+        # Catches cases like Q: "...in 2018..." A: "May 25, 2018"
+        pre_year = len(all_questions)
+        year_pat = _re.compile(r"\b(19[5-9]\d|20\d\d)\b")
+        filtered_questions = []
+        for q in all_questions:
+            q_years = set(year_pat.findall(q["question"]))
+            a_years = set(year_pat.findall(q["choices"][q["answer"]]))
+            if q_years & a_years:
+                continue  # year overlap detected
+            filtered_questions.append(q)
+        all_questions = filtered_questions
+        year_rejected = pre_year - len(all_questions)
+
+        # Deduplication: drop near-duplicate questions (same question text after lowercasing
+        # and removing punctuation)
+        pre_dedup = len(all_questions)
+        seen_questions = set()
+        filtered_questions = []
+        for q in all_questions:
+            q_norm = _re.sub(r"[^a-z0-9\s]", "", q["question"].lower())
+            q_norm = _re.sub(r"\s+", " ", q_norm).strip()
+            # Use first 80 chars as a fingerprint to catch near-duplicates
+            fingerprint = q_norm[:80]
+            if fingerprint in seen_questions:
+                continue
+            seen_questions.add(fingerprint)
+            filtered_questions.append(q)
+        all_questions = filtered_questions
+        dedup_rejected = pre_dedup - len(all_questions)
 
         # Paraphrase filter: drop questions that a sentence-embedding similarity
         # baseline can solve. These questions can be answered by reading skill
@@ -416,7 +447,9 @@ def process_generation_results(periods):
         print(f"\n{period} (end year: {end_year}):")
         print(f"  Total questions: {len(all_questions):,} (target: {QUESTIONS_PER_PERIOD:,})")
         print(f"  Length-filtered:    {length_rejected:,} rejected (correct >20% longer/shorter than distractors)")
-        print(f"  Overlap-filtered:   {overlap_rejected:,} rejected (correct shares distinctive keywords with question)")
+        print(f"  Overlap-filtered:   {overlap_rejected:,} rejected (correct shares 4+char keywords with question)")
+        print(f"  Year-filtered:      {year_rejected:,} rejected (same year in question and correct answer)")
+        print(f"  Dedup-filtered:     {dedup_rejected:,} rejected (near-duplicate questions)")
         print(f"  Paraphrase-filtered: {paraphrase_rejected:,} rejected (sentence-bert solves them by similarity)")
         print(f"  Parse errors: {parse_errors}")
         print(f"  Output: {output_path}")
