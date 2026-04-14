@@ -105,19 +105,21 @@ QUANTITATIVE_PROMPT = """You are given text from a historical document published
 
 Requirements:
 1. Extract real numbers, dates, percentages, or quantities from the text
-2. Create word problems that require mathematical reasoning (arithmetic, percentages, comparisons, rates, probability/combinatorics when applicable)
-3. Each problem should have step-by-step reasoning and a final numerical answer
+2. CRITICAL — CHAINED REASONING: Each problem must require 2-4 computation steps where each step USES THE RESULT of the previous step. Do NOT create single-step problems (like just computing one percentage). The final answer must depend on intermediate results that themselves had to be computed.
+   GOOD example (3 steps, chained): "A merchant buys 20 crates of goods at $8 each. He sells 15 crates at $12 each and the remaining 5 crates at $6 each. How much profit did he make?" → Step 1: Total cost = 20 × $8 = $160. Step 2: Total revenue = (15 × $12) + (5 × $6) = $180 + $30 = $210. Step 3: Profit = $210 - $160 = $50. (Each step builds on previous values.)
+   BAD example (not chained): "What is 30% of 200?" → Only one step, no chaining.
+3. Each problem should have step-by-step reasoning showing 2-4 computation steps. Vary the number of steps across problems.
 4. Problems should be grounded in the historical context of the text
 5. Questions must be SELF-CONTAINED word problems — include all necessary numbers and context in the question itself. Do NOT reference "the text" or "the passage".
 6. CRITICAL — TEMPORAL CONSTRAINT: All problems must use only facts and numbers from the {start_year}-{end_year} period. Do NOT reference events or data from after {end_year}.
-7. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: percentage change, ratio, difference, probability, combinatorics, etc.
+7. IMPORTANT — Each problem must use DIFFERENT numbers or calculations from the text. Vary the math type: buy/sell profit, percentage then subtract, unit rate then scale then compare, discount then tax, total then split then remainder, etc.
 8. For each problem, provide 3 plausible but INCORRECT final answers as "distractors"
-9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using COMMON ARITHMETIC MISTAKES — e.g., forgetting to subtract, multiplying instead of dividing, off-by-one errors, using the wrong base, computing a partial step as the final answer. Distractors should be the kind of wrong answers a student would get by making a single calculation error.
+9. Distractors must be the same format as the correct answer (numbers for numbers, percentages for percentages). Make distractors plausible by using COMMON ARITHMETIC MISTAKES — e.g., forgetting to subtract, multiplying instead of dividing, off-by-one errors, using the wrong base, computing a partial step as the final answer.
 10. CRITICAL — All answers (correct AND distractors) must be CLEAN INTEGERS or simple fractions. Do NOT use decimal numbers like 99.9984 or 141.4295. Round to the nearest whole number if needed.
 
 Return a JSON object. IMPORTANT: the "answer" and "distractors" must be BARE NUMBERS ONLY (e.g. "360", "25%", "$900"). Do NOT wrap them in sentences.
 
-{{"problems": [{{"question": "If production increased from 500 to 800 between 1920 and 1930, what was the average annual increase?", "reasoning": "Step 1: Calculate total increase: 800 - 500 = 300\\nStep 2: Divide by number of years: 300 / 10 = 30", "answer": "30", "distractors": ["300", "80", "15"]}}]}}
+{{"problems": [{{"question": "A merchant in 1925 buys 20 crates of goods at $8 each. He sells 15 crates at $12 each and the remaining 5 crates at $6 each. How much total profit did he make?", "reasoning": "Step 1: Calculate total cost: 20 × $8 = $160\\nStep 2: Calculate total revenue: (15 × $12) + (5 × $6) = $180 + $30 = $210\\nStep 3: Calculate profit: $210 - $160 = $50", "answer": "50", "distractors": ["210", "160", "30"]}}]}}
 
 Text:
 {text}"""
