@@ -20,14 +20,22 @@ Rules:
 1. Questions must require analytical thinking, not just fact lookup
 2. Answers must be directly supported by the text
 3. Vary question types: cause-effect, comparison, analysis, inference, summary
-4. For each pair, provide 3 plausible but INCORRECT alternative answers as "distractors"
-5. CRITICAL — Keep answers SHORT: The correct answer and ALL distractors must be concise phrases (2-8 words each, like "a lightning strike" or "increased tariff revenue"). Do NOT write full sentences. Do NOT make the correct answer longer or more detailed than the distractors.
-6. Each question must include specific historical context — names, dates, places, or events — so it is fully answerable on its own. BAD: "What happened during the battle?" GOOD: "What role did Commodore Tattnall play at the Battle of Taku Forts in 1859?"
-7. Do NOT use phrases like "according to the text", "the passage states", "mentioned above", "during the period described". Include all necessary context in the question itself.
-8. CRITICAL — TEMPORAL CONSTRAINT: All questions and answers must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any facts, events, outcomes, terminology, or references from after {end_year}.
-9. IMPORTANT — Each question must focus on a DIFFERENT topic, fact, or aspect of the text. Do NOT ask overlapping or rephrased versions of the same question.
-10. For each pair, provide detailed step-by-step reasoning (3-5 sentences) explaining WHY the answer is correct. Show the thought process: what the question asks, what evidence supports the answer, and why alternatives are wrong.
-11. Return a JSON object with key "qa_pairs" containing an array:
+4. IMPORTANT — ADAPT TO CONTENT: If the text discusses science, engineering, medicine, or natural phenomena, create questions that test understanding of the UNDERLYING PRINCIPLE — like a grade-school science exam. Do NOT ask about what the author said or argued. Instead, ask about the science itself.
+   BAD (asks about the author): "What did Wilder argue about abnormal organisms?"
+   GOOD (asks about the science): "What biological process can cause two embryos to fuse into conjoined twins?"
+   BAD: "How did the report describe electricity generation?"
+   GOOD: "What form of energy does a coal-fired power plant convert into electricity?"
+   BAD: "What did the study conclude about soil erosion?"
+   GOOD: "Which natural process causes topsoil to be carried away by water?"
+   When the text is about politics, law, or history, ask analytical cause-effect reasoning questions as usual.
+5. For each pair, provide 3 plausible but INCORRECT alternative answers as "distractors"
+6. CRITICAL — Keep answers SHORT: The correct answer and ALL distractors must be concise phrases (2-8 words each, like "a lightning strike" or "increased tariff revenue"). Do NOT write full sentences. Do NOT make the correct answer longer or more detailed than the distractors.
+7. Each question must include specific context so it is fully answerable on its own. BAD: "What happened during the battle?" GOOD: "What role did Commodore Tattnall play at the Battle of Taku Forts in 1859?"
+8. Do NOT use phrases like "according to the text", "the passage states", "mentioned above", "during the period described". Include all necessary context in the question itself.
+9. CRITICAL — TEMPORAL CONSTRAINT: All questions and answers must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any facts, events, outcomes, terminology, or references from after {end_year}.
+10. IMPORTANT — Each question must focus on a DIFFERENT topic, fact, or aspect of the text. Do NOT ask overlapping or rephrased versions of the same question.
+11. For each pair, provide detailed step-by-step reasoning (3-5 sentences) explaining WHY the answer is correct. Show the thought process: what the question asks, what evidence supports the answer, and why alternatives are wrong.
+12. Return a JSON object with key "qa_pairs" containing an array:
 
 {{"qa_pairs": [{{"question": "Question 1?", "answer": "Answer 1.", "reasoning": "First, the question asks about X. The text states Y, which directly supports this answer. Alternative interpretations such as Z are incorrect because...", "distractors": ["Wrong answer A.", "Wrong answer B.", "Wrong answer C."]}}]}}
 
