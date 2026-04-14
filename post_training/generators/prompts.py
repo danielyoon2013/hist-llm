@@ -139,26 +139,47 @@ Text:
 # Already produces 4 choices — no prompt change needed
 # ---------------------------------------------------------------------------
 
-COMPLETION_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Create {num_items} sentence completion questions in HellaSwag style.
+COMPLETION_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Use this text ONLY as inspiration for the time period and setting. Your task is to create {num_items} sentence completion questions about EVERYDAY PHYSICAL ACTIVITIES that people did during this era.
 
-The goal is to test SITUATIONAL COMPREHENSION — whether the reader can identify which completion fits the current situation, without needing any external knowledge.
+The goal is to test SITUATIONAL COMPREHENSION — whether the reader can predict what a person does next in a real-world scene, based on common sense about how physical activities work.
+
+CRITICAL — You must create TWO types of questions (mix both types):
+
+TYPE 1 — SCENE DESCRIPTIONS: Describe someone doing a physical activity, then ask what they do next.
+Example: "A farmer hitches his horse to the plow and begins working the field. After two hours, the horse slows and the farmer stops to let it rest."
+A: "He unhitches the horse and leads it to the water trough, then sits under a tree to eat his lunch." ← correct
+B: "He decides to ride the horse into town to attend a political rally at the courthouse."
+C: "He begins repainting the barn, carefully mixing the red paint in a large bucket."
+D: "He takes out a notebook and starts writing a letter to the newspaper editor."
+
+TYPE 2 — HOW-TO INSTRUCTIONS: Write step-by-step instructions for a practical task, then ask what the next step is.
+Example: "How to preserve vegetables for winter. Step: Wash each canning jar thoroughly with hot water and soap. Inspect the rim for any cracks or chips that could prevent a proper seal."
+A: "Place the jars in a pot of boiling water for ten minutes to sterilize them completely." ← correct
+B: "Fill the jars with fresh flowers picked from the garden to decorate the kitchen."
+C: "Stack the jars in the cellar without drying them and cover with a blanket."
+D: "Use the jars to store buttons, coins, and other small household items."
+
+Topics for both types:
+- Cooking, baking, canning, food preservation
+- Farming, planting, harvesting, animal care
+- Building, repairing, woodworking, metalwork
+- Cleaning, washing, sewing, household tasks
+- Shopping, trading, selling at a market
+- Traveling by train, horse, car, or ship
+- Manufacturing, factory work, machine operation
+- Sports, games, physical exercise
+- Medical care, first aid, treating injuries
 
 Requirements:
-1. Take a sentence or short passage from the text and truncate it at a natural point
-2. Create 4 possible completions (A, B, C, D): one correct (from the text) and three wrong
-3. The correct completion should continue the SAME narrative thread as the stem
-4. CRITICAL — LENGTH: Each completion (correct AND wrong) must be 2-3 sentences long (40-80 words). Short single-phrase completions are NOT acceptable. Include enough narrative detail that the reader must carefully evaluate each option.
-5. Wrong completions MUST be:
-   - Grammatically correct and the SAME length as the correct completion (2-3 sentences each)
-   - SITUATIONALLY OFF — they shift to a different topic, subject, or type of action that does not fit the current situation. Example: if the stem discusses a prisoner exchange, wrong completions should be about unrelated matters (tariff negotiations, troop deployments, treaty provisions) — NOT alternative prisoner outcomes.
-   - The test must be answerable by comprehension alone: "which completion continues what the sentence is actually about?" A reader should NOT need historical knowledge to eliminate wrong answers.
-   - NEVER contradict the stem directly (if stem says "not satisfied", do NOT say "expressed satisfaction")
-   - NEVER be vague (no "faced many challenges" or "took a different approach")
-6. The context must be SELF-CONTAINED — it should make sense on its own without the source text. Do NOT reference "the text" or "the passage".
-7. CRITICAL — TEMPORAL CONSTRAINT: All content must be grounded ONLY in knowledge available during the {start_year}-{end_year} period. Do NOT introduce any references from after {end_year}.
-8. IMPORTANT — Each completion must start from a DIFFERENT sentence or section of the text. Do NOT create multiple completions from the same or adjacent sentences.
+1. Create a SCENE showing someone doing a specific physical activity in 2-3 sentences. Then provide 4 possible continuations of what happens next.
+2. One completion must be the NATURAL NEXT STEP in the activity. The other three must describe unrelated actions.
+3. CRITICAL — LENGTH MATCHING: All four completions must be the SAME length (similar word count and sentence count). If the correct answer is 2 sentences, all wrong answers must also be 2 sentences. Do NOT make the correct answer longer or more detailed than the distractors.
+4. Wrong completions MUST shift to a completely DIFFERENT activity (not a variation of the same one).
+5. The scene must be SELF-CONTAINED — make sense on its own.
+6. CRITICAL — TEMPORAL CONSTRAINT: Use only tools, methods, and technology available during {start_year}-{end_year}. No computers, no plastic, no television, no microwave ovens. Use period-appropriate items: wood stoves, hand tools, horse-drawn carts, typewriters, telegraph, radio (if after 1920s).
+7. Each question must describe a DIFFERENT everyday activity.
 
-For each completion, provide step-by-step reasoning (3-5 sentences) explaining why the correct completion fits and why the others don't.
+For each completion, provide step-by-step reasoning explaining why the correct completion is the natural next step and why the others don't fit.
 
 Return a JSON object:
 {{"completions": [{{"context": "The beginning of the sentence or passage...", "choices": {{"A": "completion 1 (2-3 sentences)", "B": "completion 2 (2-3 sentences)", "C": "completion 3 (2-3 sentences)", "D": "completion 4 (2-3 sentences)"}}, "correct": "C", "reasoning": "The context discusses X, so the correct completion continues this topic. Completion A shifts to an unrelated subject, while completion C maintains the narrative thread about X."}}]}}
