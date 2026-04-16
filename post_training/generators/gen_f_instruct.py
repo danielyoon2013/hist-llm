@@ -22,11 +22,13 @@ class GenFInstruct(BaseGenerator):
         return response.get("winogrande_items", [])
 
     def format_conversation(self, item, fmt, source_chunk=None):
-        sentence = item.get("sentence", "").strip()
-        opt_a = item.get("option_a", "").strip()
-        opt_b = item.get("option_b", "").strip()
-        correct_letter = item.get("correct", "").strip().upper()
-        reasoning = item.get("reasoning", "").strip()
+        # Use `or ""` not the dict.get default — model sometimes emits null fields,
+        # which would slip past `get(key, "")` and crash on .strip().
+        sentence = (item.get("sentence") or "").strip()
+        opt_a = (item.get("option_a") or "").strip()
+        opt_b = (item.get("option_b") or "").strip()
+        correct_letter = (item.get("correct") or "").strip().upper()
+        reasoning = (item.get("reasoning") or "").strip()
 
         if not sentence or not opt_a or not opt_b or correct_letter not in ("A", "B"):
             return None
