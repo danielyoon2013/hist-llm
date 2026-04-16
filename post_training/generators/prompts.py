@@ -325,28 +325,21 @@ OPERATION TYPES (rotate across items in a call — do NOT use the same type twic
 (g) Ratio / proportion / split: total divided in given ratio, or one share computed from another. Ex: "$400 split so Madeline pays 60%; weekly cost for Keenan?"
 (h) Division with remainder / capacity: how many trucks/boxes/trips needed to cover N items at K-per-container (must round UP). Ex: "80 flagstones at 75 lbs each, trucks carry 2000 lbs; how many trucks?"
 
-DISTRACTOR ERROR PATTERNS (each item's THREE distractors should each use a DIFFERENT pattern from this list)
+DISTRACTOR ERROR PATTERNS (each item's THREE distractors should each use a DIFFERENT pattern from this list; decimal and sign-flip patterns are ALSO injected automatically at post-processing, so the model does not need to produce them)
 (i)    Forgot final subtraction: report gross instead of net (revenue without cost subtracted, total without tax/fee added).
-(ii)   Sign flip: report a negative when the answer is positive (or vice versa) — typically from subtracting in the wrong order. Include this pattern in AT LEAST 20% of items where profit/cost/difference is asked, so the student sees and rejects negative answers.
+(ii)   Reported intermediate value as final: stop one step early (return revenue when profit was asked, return total when per-unit was asked).
 (iii)  Wrong percentage base: applied % to the remainder when it should be % of the total, or vice versa.
-(iv)   Reported intermediate value as final: stop one step early (return revenue when profit was asked, return total when per-unit was asked).
-(v)    Wrong operation: divided where multiplication was needed, or added where subtraction was needed.
-(vi)   Off-by-one in count problems: rounded down when round-up was required, or counted endpoints wrong.
-(vii)  Used wrong subset: averaged only some of the values, or summed only the spending categories not all categories.
-(viii) Wrong-arithmetic decimal: the result of an INCORRECT calculation path that happens to be non-integer — e.g., dividing by the wrong denominator (400/3 = 133.33 instead of 400/4 = 100; 450/7 = 64.2857142857143 instead of 280/7 = 40), computing percentage of wrong base, stopping at an intermediate ratio. Include this pattern in AT LEAST 20% of items WHEN a plausible wrong-arithmetic path gives a decimal — the decimal MUST be the actual result of a specific miscalculation you describe in reasoning, NOT a random nearby number.
-       Write the decimal in one of TWO realistic forms (pick one per item):
-       (a) Rounded to 2 decimal places: "133.33", "64.29", "37.14", "73.20"
-       (b) Full unrounded float (Python repr of a/b when the division doesn't terminate): "64.2857142857143", "33.33333333333333", "99.9984"
-       The (b) form is especially informative — it signals "someone did the division and forgot to round", which is exactly what a sloppy calculator would produce. Alternate between (a) and (b) across items so both forms are learned as wrong.
-       This teaches the student to reject spurious-looking decimals (both tidy and untidy) by verifying the arithmetic.
+(iv)   Wrong operation: divided where multiplication was needed, or added where subtraction was needed.
+(v)    Off-by-one in count problems: rounded down when round-up was required, or counted endpoints wrong.
+(vi)   Used wrong subset: averaged only some of the values, or summed only the spending categories not all categories.
 
 CORE PRINCIPLES
 - Chained reasoning: each step USES the previous step's result. Final answer depends on intermediate results that themselves had to be computed.
 - ONE final question, multi-step setup: the question asks for ONE quantity. All chaining lives in the narrative leading up to that single question. Banned phrases: "First, find X. Then...", "How many X? If Y, how many Z?", "After this, what is...". The reader computes intermediate values internally; only the FINAL value is asked.
 - Historical grounding: use numbers and context inspired by the source (dates, quantities, prices from the period).
-- Correct answer is ALWAYS a clean integer (round if the arithmetic gives a decimal). The teaching goal is that the model learns "the correct answer is a whole number."
-- Distractors MAY be decimals or negatives when they come from a REAL wrong-arithmetic path (pattern viii) or sign-flip (pattern ii). A decimal distractor is a STRONG teaching signal — the model learns "a decimal choice = someone did wrong division and forgot to round." Similarly, a negative distractor teaches "a negative choice = wrong subtraction order."
-- Realistic distractors: each distractor should be the literal output of one of the eight error patterns above, applied to the question's actual numbers — NOT a random nearby number.
+- Correct answer is ALWAYS a clean positive integer (round if the arithmetic gives a decimal). The teaching goal is that the model learns "the correct answer is a whole number."
+- Distractors: each of the three distractors should be the literal output of one of the six error patterns above, applied to the question's actual numbers — NOT a random nearby number. Decimal and negative distractors are ADDED AUTOMATICALLY at post-processing (do not try to produce them yourself; they would collide with the automatic injection).
+- No currency symbols in answer or distractors: write "350" not "$350", "1250" not "$1,250". Use bare numeric strings.
 
 CONSTRAINTS
 - Temporal: all problems use only facts and numbers from {start_year}-{end_year}. Do NOT reference events or data from after {end_year}.
@@ -356,25 +349,19 @@ CONSTRAINTS
 
 REJECT IF
 - Problem is single-step (no chaining).
-- Correct answer is a decimal (correct answer must be a whole number; round if necessary).
+- Correct answer is a decimal or negative (correct must be a clean positive whole number; round if the arithmetic gives a decimal).
+- Any choice contains a currency symbol ("$350", "$1,250") or thousands comma ("1,250"). Use bare numeric strings only.
 - Problem references the source ("as stated in the text") rather than being self-contained.
 - All {num_items} items use the same operation type.
 - Problem contains a compound question ("How many X? Then how many Y?", "If Z, how many W?"). The problem MUST end with exactly ONE final question. Multi-step reasoning lives in the SETUP (the narrative leading up to the question), never in stacked sub-questions.
-- Distractor is a random nearby number rather than the output of a specific error pattern (i)-(viii).
-- None of {num_items} items in a call contain a sign-flip (ii) or wrong-arithmetic-decimal (viii) distractor when profit/cost/difference/average operations appear. At least one item per call that supports those patterns MUST use them.
+- Distractor is a random nearby number rather than the output of a specific error pattern (i)-(vi).
 
-SHAPE EXAMPLES (illustrate the structure — pick your own operation type and numbers from the source):
-  Example 1 — with SIGN-FLIP distractor:
-    Q: "A merchant in 1925 buys 20 crates of goods at $8 each. He sells 15 crates at $12 each and the remaining 5 crates at $6 each. How much total profit did he make?"  [type (e): profit/loss]
-    Reasoning: "Step 1: Total cost: 20 × $8 = $160. Step 2: Total revenue: (15 × $12) + (5 × $6) = $180 + $30 = $210. Step 3: Profit: $210 - $160 = $50."
-    Answer: "50"
-    Distractors: ["210" (pattern i: forgot to subtract cost), "160" (pattern iv: reported cost as final), "-50" (pattern ii: sign flip — subtracted in wrong order)]
-
-  Example 2 — with LONG UNROUNDED DECIMAL distractor (pattern viii form b):
-    Q: "A shop in 1930 recorded bird sightings over a week: 50 on days 1-2 combined, 0 on day 3, 120 on days 4-5 combined, 20 on day 6, and 90 on day 7. What was the average number of birds sighted per day across the seven-day week?"  [type (g): average/mean]
-    Reasoning: "Step 1: Sum of all sightings: 50 + 0 + 120 + 20 + 90 = 280. Step 2: Days in the week: 7. Step 3: Correct average = 280 / 7 = 40 (whole number). A common wrong path: divide by 6, excluding the zero-bird day, which gives 280/6 = 46.666... written as full float 46.666666666666664. Another wrong path: forget day 3 entirely and divide the day-3-excluded sum 280 by some other wrong count."
-    Answer: "40"
-    Distractors: ["46.666666666666664" (pattern viii-b: wrong-arithmetic decimal, full unrounded float from dividing by 6 instead of 7), "280" (pattern iv: reported total as final), "-40" (pattern ii: sign flip)]
+SHAPE EXAMPLE (illustrate the structure — pick your own operation type and numbers from the source):
+  Q: "A merchant in 1925 buys 20 crates of goods at 8 dollars each. He sells 15 crates at 12 dollars each and the remaining 5 crates at 6 dollars each. How much total profit did he make?"  [type (e): profit/loss]
+  Reasoning: "Step 1: Total cost: 20 × 8 = 160. Step 2: Total revenue: (15 × 12) + (5 × 6) = 180 + 30 = 210. Step 3: Profit: 210 - 160 = 50."
+  Answer: "50"
+  Distractors: ["210" (pattern i: forgot to subtract cost), "160" (pattern ii: reported cost as final value), "30" (pattern vi: used only the discounted-crate revenue)]
+  (Note: the post-processing may replace one of these three distractors with either a long-unrounded-decimal like "58.333333333333336" (= 50 × 7/6, from a wrong-division path) or "-50" (sign flip). Do NOT produce those yourself.)
 
 BAD (NOT chained) — would be REJECTED: "What is 30% of 200?" → only one step, no chaining.
 
