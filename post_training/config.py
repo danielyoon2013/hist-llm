@@ -123,24 +123,37 @@ ITEMS_PER_CALL = 2      # items requested per API call (all generators)
 CHUNKS_PER_DOC = 2      # average chunks per document (6000 chars, 300 overlap)
 
 GENERATOR_SPEC = {
-    "A": {"formats": ("mc4", "open", "cot"),         "corpus": True},
-    "B": {"formats": ("mc2", "cot"),                 "corpus": True},
-    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True},
-    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True},
-    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True},
-    "F": {"formats": ("mc2", "cot"),                 "corpus": True},
+    # collections=None → all collections; list → restrict to those collections only.
+    # pass_rate = empirically measured fraction of items that survive format_conversation()
+    #             validation; docs_needed and the call cap are inflated by 1/pass_rate so
+    #             that the per-slot target is met AFTER filtering.
+    # Gen A targets ARC-style grade-school science.
+    # Open-Science-Pile = biology/geology/dredging research papers.
+    # USPTO = patents covering circuits, materials, chemistry, mechanical principles
+    # (broader topic coverage closer to ARC's physical/life/earth science mix).
+    "A": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": ["Open-Science-Pile", "USPTO"], "pass_rate": 0.95},
+    "B": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.95},
+    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True, "collections": None, "pass_rate": 0.90},
+    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.95},
+    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.85},
+    "F": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.62},
 }
 
 
 def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
     """Derive per-generator targets and doc counts from format counts.
 
+    Each generator's docs_needed and effective_target are inflated by 1/pass_rate
+    so the post-filter yield meets the per-slot target. `target` in the returned
+    entry is the NOMINAL goal (post-filter conversations); `effective_target` is
+    what base.py should use for call-cap sizing.
+
     Returns:
         {
             "target": 1_000_000,
             "generators": {
-                "A": {"target": 222,222, "per_format": 111,111, "docs_needed": 27,778},
-                "B": {"target": 222,222, "per_format": 111,111, "docs_needed": 27,778},
+                "A": {"target": 187500, "per_format": 62500, "pass_rate": 0.95,
+                      "effective_target": 197368, "docs_needed": 16447},
                 ...
             }
         }
@@ -153,17 +166,27 @@ def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
 
     generators = {}
     for key in sorted(gen_keys):
-        n_fmts = len(GENERATOR_SPEC[key]["formats"])
+        spec = GENERATOR_SPEC[key]
+        n_fmts = len(spec["formats"])
+        pass_rate = spec.get("pass_rate", 1.0)
         gen_target = per_slot * n_fmts
+        effective_target = int(gen_target / pass_rate) if pass_rate < 1.0 else gen_target
 
-        entry = {"target": gen_target, "per_format": per_slot}
+        entry = {
+            "target": gen_target,
+            "per_format": per_slot,
+            "pass_rate": pass_rate,
+            "effective_target": effective_target,
+        }
 
-        if GENERATOR_SPEC[key]["corpus"]:
+        if spec["corpus"]:
             items_per_doc = ITEMS_PER_CALL * CHUNKS_PER_DOC
-            entry["docs_needed"] = -(-per_slot // items_per_doc)
+            effective_per_slot = int(per_slot / pass_rate) if pass_rate < 1.0 else per_slot
+            entry["docs_needed"] = -(-effective_per_slot // items_per_doc)
         else:
             entry["docs_needed"] = None
-            entry["api_calls"] = -(-per_slot // ITEMS_PER_CALL)
+            effective_per_slot = int(per_slot / pass_rate) if pass_rate < 1.0 else per_slot
+            entry["api_calls"] = -(-effective_per_slot // ITEMS_PER_CALL)
 
         generators[key] = entry
 
@@ -171,6 +194,7 @@ def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
     diff = target - sum(g["target"] for g in generators.values())
     if diff and "A" in generators:
         generators["A"]["target"] += diff
+        generators["A"]["effective_target"] += diff
 
     return {"target": target, "generators": generators}
 

@@ -124,20 +124,26 @@ def main():
         if args.max_docs is not None:
             docs_for_gen = args.max_docs  # legacy override
 
+        # Per-generator collection restriction (CLI override > GENERATOR_SPEC default)
+        spec_collections = GENERATOR_SPEC[gen_key].get("collections")
+        collections_for_gen = args.collections if args.collections else spec_collections
+
         print(f"\n{'='*70}")
         verb = {"submit": "Submitting", "process": "Processing", "run": "Running"}
         print(f"{verb[action]} Generator {gen_key}: {gen.name}")
-        print(f"Target: {gen_plan['target']:,} examples")
+        print(f"Target: {gen_plan['target']:,} examples (pass_rate={gen_plan.get('pass_rate', 1.0):.0%}, effective={gen_plan.get('effective_target', gen_plan['target']):,})")
+        if collections_for_gen:
+            print(f"Collections: {collections_for_gen}")
         print(f"{'='*70}")
 
         result = gen.run(
             period=args.period,
-            collections=args.collections,
+            collections=collections_for_gen,
             max_workers=args.max_workers,
             max_docs=docs_for_gen,
             chunk_size=args.chunk_size,
             overlap=args.overlap,
-            target_examples=gen_plan["target"],
+            target_examples=gen_plan.get("effective_target", gen_plan["target"]),
             action=action,
         )
 
