@@ -33,7 +33,8 @@ from src.post_training.utils import read_jsonl, write_jsonl
 SEED = 42
 
 # MC format keys — only these go into the test split
-MC_FORMATS = {"mc4", "mc4_passage"}
+MC_FORMATS = {"mc4", "mc4_passage", "mc2"}
+MC2_FORMATS = {"mc2"}
 
 # Temporal contamination filter: detect post-1949 year references in training text
 # Catches cases where GPT-4o-mini ignored the temporal constraint
@@ -330,9 +331,11 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
 
             if doc in test_docs:
                 if fmt in MC_FORMATS:
+                    from src.post_training.generators.base import MC4_LETTERS, MC2_LETTERS
+                    letters = list(MC2_LETTERS) if fmt in MC2_FORMATS else list(MC4_LETTERS)
                     entry = {
                         "messages": messages,
-                        "letters": ["A", "B", "C", "D"],
+                        "letters": letters,
                     }
                     test_convs.append(entry)
                     test_by_gen[gen_letter].append(entry)

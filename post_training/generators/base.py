@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.post_training.config import (
     PERIODS, get_paths, load_api_key, MODEL, MAX_RETRIES, RETRY_BASE_DELAY,
-    GENERATOR_SPEC, ITEMS_PER_CALL,
+    GENERATOR_SPEC, ITEMS_PER_CALL, GENERATOR_MODEL_OVERRIDES,
 )
 from src.post_training.utils import validate_conversation, write_jsonl
 
@@ -43,6 +43,25 @@ FORMAT_OPEN = "open"              # Open-ended Q&A (GSM8K)
 FORMAT_COT = "cot"                # Chain-of-thought with <think> tags
 
 MAX_PASSAGE_LENGTH = 2000  # Truncate passages for passage-based formats
+
+# ---------------------------------------------------------------------------
+# MC letter schemes (chosen from rare English letters to reduce positional bias)
+# ---------------------------------------------------------------------------
+# MC-4 uses Q/X/Z/J (English frequency ~0.07-0.15% each)
+# MC-2 uses K/V (~0.8-1.0% each)
+# These replace A/B/C/D to mitigate the small-model A-bias documented in
+# Zheng et al. 2024 (ICLR). See also: letter frequency table below.
+MC4_LETTERS = ("Q", "X", "Z", "J")
+MC2_LETTERS = ("K", "V")
+
+
+def mc_letters(num_choices: int) -> tuple:
+    """Return the letter tuple for a given MC arity."""
+    if num_choices == 2:
+        return MC2_LETTERS
+    if num_choices == 4:
+        return MC4_LETTERS
+    raise ValueError(f"Unsupported num_choices={num_choices}")
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +117,7 @@ def make_mc_choices(correct, distractors, num_choices=4, position_idx=None):
     wrong = list(distractors[:num_choices - 1])
     target_pos = position_idx % num_choices if position_idx is not None else 0
     pool = wrong[:target_pos] + [correct] + wrong[target_pos:]
-    letters = tuple("ABCD"[:len(pool)])
+    letters = mc_letters(len(pool))
     correct_letter = letters[target_pos]
     return letters, pool, correct_letter
 
@@ -180,6 +199,11 @@ class BaseGenerator(ABC):
     def needs_corpus(self):
         return GENERATOR_SPEC[self.gen_key]["corpus"]
 
+    @property
+    def model(self):
+        """Model override for this generator, or the global MODEL default."""
+        return GENERATOR_MODEL_OVERRIDES.get(self.gen_key, MODEL)
+
     @abstractmethod
     def build_prompt(self, chunk, period, start_year, end_year):
         """Build the generation prompt for a text chunk (or batch_num for metadata-based)."""
@@ -254,7 +278,7 @@ class BaseGenerator(ABC):
         client = OpenAI(api_key=api_key)
 
         print(f"Max workers: {max_workers}")
-        print(f"Model: {MODEL}")
+        print(f"Model: {self.model}")
 
         # Build output paths per format
         output_paths = {
@@ -352,7 +376,7 @@ class BaseGenerator(ABC):
         client, doc_name, chunk_idx, chunk, period, start_year, end_year = task
 
         prompt = self.build_prompt(chunk, period, start_year, end_year)
-        response = call_api(client, prompt)
+        response = call_api(client, prompt, model=self.model)
 
         if response is None:
             return {}
@@ -508,16 +532,39 @@ class BaseGenerator(ABC):
             cid, prompt = task_tuple[0], task_tuple[1]
             requests.append({
                 "custom_id": cid,
+                "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 4096,
                 "temperature": 0.7,
             })
 
-        # Split into chunks (OpenAI gpt-4o-mini limit: 200MB per batch file)
-        # At ~7KB/request, 25K requests ≈ 175MB — safe margin under 200MB
-        CHUNK_SIZE = 25_000
-        chunks = [requests[i:i + CHUNK_SIZE]
-                  for i in range(0, len(requests), CHUNK_SIZE)]
+        # Split by serialized byte size (OpenAI gpt-4o-mini limit: 200MB per file)
+        # Target 180MB per chunk to leave safety margin.
+        MAX_BYTES = 180 * 1024 * 1024
+        chunks = []
+        current, current_bytes = [], 0
+        for req in requests:
+            # Approximate size of one serialized line (request body + JSON overhead).
+            # Matches format in create_batch_request_file.
+            line_bytes = len(json.dumps({
+                "custom_id": req["custom_id"],
+                "method": "POST",
+                "url": "/v1/chat/completions",
+                "body": {
+                    "model": req.get("model", MODEL),
+                    "messages": req["messages"],
+                    "max_tokens": req.get("max_tokens", 256),
+                    "response_format": {"type": "json_object"},
+                    **({"temperature": req["temperature"]} if "temperature" in req else {}),
+                },
+            })) + 1  # newline
+            if current and current_bytes + line_bytes > MAX_BYTES:
+                chunks.append(current)
+                current, current_bytes = [], 0
+            current.append(req)
+            current_bytes += line_bytes
+        if current:
+            chunks.append(current)
 
         batch_ids = []
         for ci, chunk in enumerate(chunks):

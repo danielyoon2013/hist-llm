@@ -1,10 +1,10 @@
-"""Generator F: Instruction Following — multi-format (MC-4+Passage, Open-ended, CoT)."""
+"""Generator F: Pronoun Resolution (Winogrande-style) — MC-2, CoT."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4_PASSAGE, FORMAT_OPEN, FORMAT_COT,
+    BaseGenerator, FORMAT_MC2, FORMAT_COT,
     render_mc, make_mc_choices,
 )
-from src.post_training.generators.prompts import INSTRUCT_PROMPT
+from src.post_training.generators.prompts import WINOGRANDE_PROMPT
 
 
 class GenFInstruct(BaseGenerator):
@@ -13,62 +13,58 @@ class GenFInstruct(BaseGenerator):
     name = "gen_f_instruct"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return INSTRUCT_PROMPT.format(
+        return WINOGRANDE_PROMPT.format(
             num_items=self.items_per_chunk, text=chunk,
             start_year=start_year, end_year=end_year,
         )
 
     def parse_response(self, response):
-        return response.get("tasks", [])
+        return response.get("winogrande_items", [])
 
     def format_conversation(self, item, fmt, source_chunk=None):
-        instruction = item.get("instruction", "")
-        passage = item.get("passage", "")
-        response = item.get("response", "")
-        short_answer = item.get("short_answer", "")
+        sentence = item.get("sentence", "").strip()
+        opt_a = item.get("option_a", "").strip()
+        opt_b = item.get("option_b", "").strip()
+        correct_letter = item.get("correct", "").strip().upper()
+        reasoning = item.get("reasoning", "").strip()
 
-        if fmt == FORMAT_MC4_PASSAGE:
-            if not passage:
-                return None
-            distractors = item.get("distractors", [])
-            if not short_answer or len(distractors) < 3:
-                return None
+        if not sentence or not opt_a or not opt_b or correct_letter not in ("A", "B"):
+            return None
+        if "_" not in sentence:
+            return None
+
+        sent_lower = sentence.lower()
+        def _in_sentence(opt):
+            o = opt.lower().strip()
+            if o in sent_lower:
+                return True
+            for prefix in ("the ", "a ", "an "):
+                if o.startswith(prefix) and o[len(prefix):] in sent_lower:
+                    return True
+            return False
+        if not _in_sentence(opt_a) or not _in_sentence(opt_b):
+            return None
+
+        correct_filler = opt_a if correct_letter == "A" else opt_b
+        distractor = opt_b if correct_letter == "A" else opt_a
+
+        if fmt == FORMAT_MC2:
             letters, choices, correct = make_mc_choices(
-                short_answer, distractors, num_choices=4,
+                correct_filler, [distractor], num_choices=2,
                 position_idx=next(self._mc_counters[fmt]),
             )
-            passage_question = (
-                f"Read the following passage and answer the question.\n\n"
-                f"Passage: {passage}\n\n{instruction}"
-            )
-            user_msg = render_mc(passage_question, letters, choices)
+            user_msg = render_mc(sentence, letters, choices)
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
             ]
 
-        if fmt == FORMAT_OPEN:
-            if not passage or not response:
-                return None
-            user_msg = (
-                f"Read the following passage and follow the instruction.\n\n"
-                f"Passage: {passage}\n\n{instruction}"
-            )
-            return [
-                {"role": "user", "content": user_msg},
-                {"role": "assistant", "content": response},
-            ]
-
         if fmt == FORMAT_COT:
-            if not passage or not response or not short_answer:
+            if not reasoning:
                 return None
-            user_msg = (
-                f"Read the following passage and follow the instruction.\n\n"
-                f"Passage: {passage}\n\n{instruction}"
-            )
-            content = f"<think>\n{response}\n</think>\n{short_answer}"
+            content = f"<think>\n{reasoning}\n</think>\n{correct_filler}"
             return [
-                {"role": "user", "content": user_msg},
+                {"role": "user", "content": sentence},
                 {"role": "assistant", "content": content},
             ]
 

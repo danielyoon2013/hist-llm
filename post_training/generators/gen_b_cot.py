@@ -1,10 +1,10 @@
-"""Generator B: Chain-of-Thought — multi-format (MC-4, Open-ended, CoT)."""
+"""Generator B: Physical Commonsense (PIQA-style) — MC-2, CoT."""
 
 from src.post_training.generators.base import (
-    BaseGenerator, FORMAT_MC4, FORMAT_OPEN, FORMAT_COT,
+    BaseGenerator, FORMAT_MC2, FORMAT_COT,
     render_mc, make_mc_choices,
 )
-from src.post_training.generators.prompts import COT_PROMPT
+from src.post_training.generators.prompts import PIQA_PROMPT
 
 
 class GenBCoT(BaseGenerator):
@@ -13,42 +13,39 @@ class GenBCoT(BaseGenerator):
     name = "gen_b_cot"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return COT_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
-                                 start_year=start_year, end_year=end_year)
+        return PIQA_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
+                                  start_year=start_year, end_year=end_year)
 
     def parse_response(self, response):
-        return response.get("cot_examples", [])
+        return response.get("piqa_items", [])
 
     def format_conversation(self, item, fmt, source_chunk=None):
-        question = item.get("question", "")
-        answer = item.get("answer", "")
+        goal = item.get("goal", "")
+        solution = item.get("solution", "")
+        distractor = item.get("distractor", "")
         reasoning = item.get("reasoning", "")
 
-        if fmt == FORMAT_COT:
-            content = f"<think>\n{reasoning}\n</think>\n{answer}" if reasoning else answer
-            return [
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": content},
-            ]
+        if not goal or not solution or not distractor:
+            return None
 
-        if fmt == FORMAT_OPEN:
-            return [
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": answer},
-            ]
-
-        if fmt == FORMAT_MC4:
-            distractors = item.get("distractors", [])
-            if len(distractors) < 3:
-                return None
+        if fmt == FORMAT_MC2:
             letters, choices, correct = make_mc_choices(
-                answer, distractors, num_choices=4,
+                solution, [distractor], num_choices=2,
                 position_idx=next(self._mc_counters[fmt]),
             )
-            user_msg = render_mc(question, letters, choices)
+            user_msg = render_mc(goal, letters, choices)
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
+            ]
+
+        if fmt == FORMAT_COT:
+            if not reasoning:
+                return None
+            content = f"<think>\n{reasoning}\n</think>\n{solution}"
+            return [
+                {"role": "user", "content": goal},
+                {"role": "assistant", "content": content},
             ]
 
         return None

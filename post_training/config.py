@@ -124,11 +124,11 @@ CHUNKS_PER_DOC = 2      # average chunks per document (6000 chars, 300 overlap)
 
 GENERATOR_SPEC = {
     "A": {"formats": ("mc4", "open", "cot"),         "corpus": True},
-    "B": {"formats": ("mc4", "open", "cot"),        "corpus": True},
+    "B": {"formats": ("mc2", "cot"),                 "corpus": True},
     "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True},
     "D": {"formats": ("mc4", "open", "cot"),         "corpus": True},
     "E": {"formats": ("mc4", "open", "cot"),         "corpus": True},
-    "F": {"formats": ("mc4_passage", "open", "cot"), "corpus": True},
+    "F": {"formats": ("mc2", "cot"),                 "corpus": True},
 }
 
 
@@ -180,5 +180,11 @@ def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
 # ---------------------------------------------------------------------------
 
 MODEL = "gpt-4o-mini"
+# Per-generator overrides. Used for tasks where mini is too weak (e.g. Gen F
+# Winogrande-style pronoun resolution, which requires constructing genuine
+# ambiguity that mini struggles with).
+GENERATOR_MODEL_OVERRIDES = {
+    "F": "gpt-4o",
+}
 MAX_RETRIES = 5
 RETRY_BASE_DELAY = 2  # seconds, exponential backoff: 2, 4, 8, 16, 32

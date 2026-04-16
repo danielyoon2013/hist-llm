@@ -114,12 +114,11 @@ Allocation is computed automatically by `config.py:compute_allocation()`. Corpus
 | Generator | Type | Ex/Chunk | % of 1M | Mid-Train | SFT (1%) |
 |-----------|------|---------|---------|----------:|--------:|
 | A. Factual QA | corpus | 6 | 19.0% | 190,000 | 1,949 |
-| B. Chain-of-Thought | corpus | 6 | 19.0% | 190,000 | 1,949 |
+| B. Physical Commonsense (PIQA) | corpus | 4 | 12.7% | 126,667 | 1,299 |
 | C. Reading Comprehension | corpus | 6 | 19.0% | 190,000 | 1,949 |
 | D. Temporal Reasoning | metadata | — | 2.5% | 25,000 | 256 |
 | E. Quantitative | corpus | 4 | 12.7% | 126,667 | 1,299 |
-| F. Sentence Completion | corpus | 6 | 19.0% | 190,000 | 1,949 |
-| G. Instruction Following | corpus | 2 | 6.3% | 63,333 | 649 |
+| F. Pronoun Resolution (Winogrande) | corpus | 4 | 12.7% | 126,667 | 1,299 |
 | H. Historical Facts | metadata | — | 2.5% | 25,000 | 0 (train-only) |
 | **Total** | | | **100%** | **1,000,000** | **10,000** |
 

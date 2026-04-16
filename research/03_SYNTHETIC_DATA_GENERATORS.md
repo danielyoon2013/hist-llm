@@ -84,7 +84,7 @@ Now, the content tested by these external benchmarks can be naturally classified
 | Generator | MMLU | ARC-C | GSM8K | HellaSwag | BoolQ | PIQA | WinoGrande | RACE |
 |-----------|:----:|:-----:|:-----:|:---------:|:-----:|:----:|:----------:|:----:|
 | **A.** Factual QA | O | O | | | O | | | |
-| **B.** Chain-of-Thought | | O | O | | | | | |
+| **B.** Physical Commonsense | | | | | | O | | |
 | **C.** Reading Comprehension | | | | O | O | | | O |
 | **D.** Temporal Reasoning | | | | | | | | |
 | **E.** Quantitative | | | O | | | | | |
@@ -101,7 +101,7 @@ Now the supply side. Each of our 8 generators produces data in one or more forma
 | Generator | MC-4 | MC-2 | MC-4+P | MC-2+P | Open | CoT | Benchmark Targets |
 |-----------|:----:|:----:|:------:|:------:|:----:|:---:|-------------------|
 | **A.** Factual QA | O | | | | O | | MMLU, ARC |
-| **B.** Chain-of-Thought | O | | | | O | O | ARC, GSM8K |
+| **B.** Physical Commonsense | | O | | | | O | PIQA |
 | **C.** Reading Comprehension | | | O | O | | | RACE, BoolQ |
 | **D.** Temporal Reasoning | O | | | | O | | LAB Eval, Temp Consistency |
 | **E.** Quantitative | | | | | O | O | GSM8K (complement) |
@@ -122,7 +122,7 @@ The third dimension is **source** — which corpus collection provides the input
 | Generator | Economist | NYT | FT | Newswire | CaseLaw | USPTO | Books | GATT/EurLex |
 |-----------|:---------:|:---:|:--:|:--------:|:-------:|:-----:|:-----:|:-----------:|
 | **A.** Factual QA | O | O | O | O | O | O | O | O |
-| **B.** Chain-of-Thought | O | O | O | O | O | O | O | O |
+| **B.** Physical Commonsense | | | | | | | O | |
 | **C.** Reading Comprehension | O | O | O | O | O | O | O | O |
 | **D.** Temporal Reasoning | O | O | O | O | | | | |
 | **E.** Quantitative | O | | O | | | | | O |
@@ -331,42 +331,45 @@ Asst:  The court reasoned that the jury's verdict was within the range of
 
 ---
 
-### Generator B: Chain-of-Thought Reasoning
+### Generator B: Physical Commonsense (PIQA-style)
 
-**Source:** `src/post_training/corpus/run_direct.py` (COT_PROMPT)
-**Status:** Production. Runs alongside Generator A.
-**Active format cells:** Open-ended (CoT), Ranking
+**Source:** `src/post_training/generators/prompts.py` (PIQA_PROMPT)
+**Status:** Production (re-purposed from Chain-of-Thought on 2026-04-15 — see changelog below).
+**Active format cells:** MC-2, CoT
+**Benchmark target:** PIQA
 
-#### Prompt Template (from `run_direct.py`)
+#### Why the switch from CoT
 
-```
-COT_PROMPT = """Create {num_cot} complex reasoning examples from this text that
-demonstrate chain-of-thought thinking.
+Generator A already produces `open` and `cot` formats covering ARC-style cause-effect reasoning. A separate CoT-only generator was redundant. Meanwhile PIQA (Physical Interaction QA) was untargeted — no generator produced physical commonsense MC-2 pairs. Gen B now fills that gap.
 
-Each example should have:
-1. A challenging question that requires step-by-step reasoning
-2. Detailed reasoning steps that break down the problem
-3. A concise final answer
+#### Prompt Structure
 
-Return a JSON object with key "cot_examples" containing an array:
-
-{{"cot_examples": [{{"question": "Complex question?",
-  "reasoning": "Step 1: First, I need to consider...\\nStep 2: Then, I analyze...
-  \\nStep 3: Finally, I can conclude...",
-  "answer": "Final answer based on the reasoning."}}]}}
-
-Text:
-{text}"""
-```
+- 6,000-char chunk provides temporal/contextual inspiration (period-appropriate tools and vocabulary)
+- Model produces `{num_items}` PIQA items, each with four possible goal styles (cycled):
+  (i) bare object label (1-3 words: "mop", "butter churn", "kerosene lamp")
+  (ii) imperative ("Prevent spiders from entering house.")
+  (iii) how-to ("How to sharpen a kitchen knife.")
+  (iv) sentence stem ("To keep milk from spoiling in summer,")
+- Each item has a `solution` and a `distractor` that are length-matched and differ by one of five subtle-error patterns: wrong tool swap, inverted action, wrong container/location, missing critical step, nonsensical material
+- Step-by-step reasoning (3-5 steps) explains why the solution works and why the distractor fails
+- Within-call diversity constraint: each of the N items in a call must be about a different object/task
 
 #### Output Format
 
-CoT examples are wrapped in `<think>` tags during conversion:
+MC-2 (training on physical choice):
+```
+Multiple Choice question: butter churn
+- can turn cream into butter.=A
+- can turn cream into ice cream.=B
 
+Respond only with the letter of the correct answer.
+```
+
+CoT (training on physical reasoning):
 ```json
 [
-  {"role": "user", "content": "How did the trade deficit contribute to the currency devaluation?"},
-  {"role": "assistant", "content": "<think>\nStep 1: The trade deficit widened from $X to $Y...\nStep 2: This put downward pressure on the currency...\nStep 3: The central bank's reserves were insufficient...\n</think>\nThe trade deficit directly contributed to the devaluation by..."}
+  {"role": "user", "content": "Prevent spiders from entering house."},
+  {"role": "assistant", "content": "<think>\nStep 1: Spiders enter through small openings in walls.\nStep 2: Sealing cracks blocks the path they use.\nStep 3: Opening cracks would create more entry points.\n</think>\nSeal up any wall cracks with putty."}
 ]
 ```
 
@@ -374,9 +377,14 @@ CoT examples are wrapped in `<think>` tags during conversion:
 
 | Parameter | Value |
 |-----------|-------|
-| CoT examples per chunk | 2 |
-| Same chunking as QA | 6,000 chars / 300 overlap |
-| `<think>` tag wrapping | Applied in `run_direct.py` lines 284-289 |
+| Items per chunk | 2 |
+| Chunking | 6,000 chars / 300 overlap |
+| Formats | `mc2`, `cot` |
+| Temporal constraint | 1900-1949 tools/materials only; no microwaves, plastic, post-{end_year} tech |
+
+#### Changelog
+
+- **2026-04-15:** Re-purposed Gen B from Chain-of-Thought to Physical Commonsense (PIQA-style). Removed COT_PROMPT, added PIQA_PROMPT. Formats changed from `(mc4, open, cot)` to `(mc2, cot)`. Reason: Gen A already covers ARC+CoT targeting; PIQA was untargeted across our 6 generators.
 
 #### Format Comparison: HotpotQA vs. Generator B
 
@@ -585,7 +593,66 @@ Asst:  A
 
 ---
 
-### Generator G: Instruction Following
+### Generator F: Pronoun Resolution (Winogrande-style)
+
+**Source:** `src/post_training/generators/prompts.py` (WINOGRANDE_PROMPT)
+**Status:** Production (re-purposed from Instruction Following on 2026-04-15 — see changelog below).
+**Active format cells:** MC-2, CoT
+**Benchmark target:** Winogrande
+
+#### Why the switch from Instruction Following
+
+Gen F previously produced `mc4_passage` instruction-response pairs, which was redundant with Gen C (Reading Comprehension) — both targeted RACE via the same passage-MC format. Meanwhile Winogrande (pronoun resolution) was untargeted across our 6 generators. Gen F now fills that gap.
+
+#### Prompt Structure
+
+- 6,000-char chunk provides temporal/contextual inspiration (period-appropriate entity vocabulary)
+- Model produces `{num_items}` Winogrande items, each a single sentence (10-25 words) with exactly two concrete entities and one blank `_`
+- Both fillers must be grammatically valid on the surface; the ambiguity is resolved by commonsense
+- Commonsense anchors are rotated across items: (a) professional role/expertise, (b) physical property, (c) motivation/intention, (d) causality, (e) ownership
+- Mandatory `verification` field forces the model to check both readings before assigning the correct label
+- Concrete-entities rule: no abstract nouns (the law, the verdict, duty, honor) as one of the two fillers
+- Step-by-step reasoning (3-5 steps) explains which commonsense fact resolves the ambiguity
+
+#### Output Format
+
+MC-2 (training on pronoun resolution):
+```
+Multiple Choice question: The farmer sold his corn to the miller because _ needed to grind it into flour.
+- the farmer=A
+- the miller=B
+
+Respond only with the letter of the correct answer.
+```
+
+CoT (training on commonsense reasoning):
+```json
+[
+  {"role": "user", "content": "The iron anvil would not fit on the wooden workbench because _ was too heavy."},
+  {"role": "assistant", "content": "<think>\nStep 1: Iron is far denser than wood.\nStep 2: A blacksmith's anvil typically weighs over 100 lbs.\nStep 3: A workbench is designed to support tools, so its weight is not the limiter.\n</think>\nthe anvil"}
+]
+```
+
+#### Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Items per chunk | 2 |
+| Chunking | 6,000 chars / 300 overlap |
+| Formats | `mc2`, `cot` |
+| Temporal constraint | 1900-1949 entities only: farmer, miller, blacksmith, merchant, sailor, judge, clerk, doctor, etc. No post-{end_year} roles |
+
+#### Changelog
+
+- **2026-04-15:** Re-purposed Gen F from Instruction Following to Pronoun Resolution (Winogrande-style). Replaced INSTRUCT_PROMPT with WINOGRANDE_PROMPT. Formats changed from `(mc4_passage, open, cot)` to `(mc2, cot)`. Reason: Gen C already covers RACE targeting via mc4_passage; Winogrande was untargeted across our 6 generators.
+
+---
+
+### Generator G (deprecated): Instruction Following
+
+**Status:** Removed from the production pipeline. The current code has only Generators A-F; the original Gen G "Instruction Following" specification below is retained for historical reference. Its closest current analog is Gen C (Reading Comprehension + instructions), which targets RACE.
+
+#### Original design (pre-2026-04-15)
 
 **Active format cells:** MC-4+Passage (passage-only)
 **Sources:** All (universal)

@@ -38,11 +38,11 @@ GENERATOR_SPEC in config.py:
 Gen   Name              Formats                       Slots
 ───   ────              ───────                       ─────
 A     Factual QA        mc4, open                     2
-B     Chain-of-Thought  mc4, cot                      2
+B     Physical Commonsense (PIQA)  mc2, cot           2
 C     Comprehension     mc4_passage                   1
 D     Quantitative      mc4, open, cot                3
 E     Completion        mc4                           1
-F     Instruct          mc4_passage                   1
+F     Pronoun Resolution (Winogrande)  mc2, cot       2
                                               Total: 10 slots
 ```
 
@@ -91,11 +91,11 @@ All generators are corpus-based — they read documents from `synthetic/input/` 
 | ID | Name | Formats | Benchmark Alignment | Items/Call |
 |----|------|---------|---------------------|-----------|
 | A | Factual QA | `mc4`, `open` | ARC | 2 |
-| B | Chain-of-Thought | `mc4`, `cot` | ARC | 2 |
+| B | Physical Commonsense | `mc2`, `cot` | PIQA | 2 |
 | C | Reading Comprehension | `mc4_passage` | RACE | 2 |
 | D | Quantitative | `mc4`, `open`, `cot` | MathQA, GSM-MC | 2 |
 | E | Historical Completion | `mc4` | HellaSwag | 2 |
-| F | Instruction Following | `mc4_passage` | RACE | 2 |
+| F | Pronoun Resolution | `mc2`, `cot` | Winogrande | 2 |
 
 ### Format Key
 
@@ -219,11 +219,11 @@ post_training/
 │   ├── base.py                        # BaseGenerator: run(), batch submit/process, render_mc
 │   ├── prompts.py                     # 6 prompt templates (with distractor requests)
 │   ├── gen_a_factual.py               # A: Factual QA (mc4, open)
-│   ├── gen_b_cot.py                   # B: Chain-of-Thought (mc4, cot)
+│   ├── gen_b_cot.py                   # B: Physical Commonsense — PIQA (mc2, cot)
 │   ├── gen_c_comprehension.py         # C: Reading Comprehension (mc4_passage)
 │   ├── gen_d_quantitative.py          # D: Quantitative / Math (mc4, open, cot)
 │   ├── gen_e_completion.py            # E: Sentence Completion (mc4)
-│   └── gen_f_instruct.py             # F: Instruction Following (mc4_passage)
+│   └── gen_f_instruct.py             # F: Pronoun Resolution — Winogrande (mc2, cot)
 │
 ├── quality/                           # Quality pipeline (deferred for v1)
 │   ├── validate.py                    # Format + content validation
@@ -257,14 +257,15 @@ D:\hist_LLM\periods\{period}\posttraining_data\
 │   ├── by_generator/                  # Per-generator raw output (Step 2: generate.py)
 │   │   ├── gen_a_factual_mc4.jsonl
 │   │   ├── gen_a_factual_open.jsonl
-│   │   ├── gen_b_cot_mc4.jsonl
+│   │   ├── gen_b_cot_mc2.jsonl
 │   │   ├── gen_b_cot_cot.jsonl
 │   │   ├── gen_c_comprehension_mc4_passage.jsonl
 │   │   ├── gen_d_quantitative_mc4.jsonl
 │   │   ├── gen_d_quantitative_open.jsonl
 │   │   ├── gen_d_quantitative_cot.jsonl
 │   │   ├── gen_e_completion_mc4.jsonl
-│   │   └── gen_f_instruct_mc4_passage.jsonl
+│   │   ├── gen_f_instruct_mc2.jsonl
+│   │   └── gen_f_instruct_cot.jsonl
 │   │
 │   └── batch_temp/                    # Batch API temporary files
 │       ├── gen_*_requests.jsonl
@@ -369,10 +370,12 @@ Although we don't train on external datasets, our generators produce data that e
 
 | External Benchmark | Skill Tested | Our Generator | How It Aligns |
 |--------------------|-------------|---------------|--------------|
-| **ARC-Challenge** | Apply causal mechanisms to novel scenarios | Gen A (Factual QA), Gen B (CoT) | Both train analytical cause-effect reasoning in MC-4 format. Our distractors use same vocabulary but wrong reasoning — same ARC pattern, historical domain instead of science |
+| **ARC-Challenge** | Apply causal mechanisms to novel scenarios | Gen A (Factual QA) | Trains analytical cause-effect reasoning in MC-4 format. Distractors use same vocabulary but wrong reasoning — same ARC pattern, historical domain instead of science |
+| **PIQA** | Pick the physically sensible method | Gen B (Physical Commonsense) | MC-2 pairs: tool/action swap, inverted verb, wrong container, missing step, nonsensical material. Bare object labels + imperatives + how-to + sentence stems |
 | **HellaSwag** | Predict next step in an activity sequence | Gen E (Completion) | Distractors are situationally off — they shift to a different topic than the stem (e.g., tariffs when discussing a prisoner). Answerable by comprehension alone ("which completion stays on topic?"), matching HellaSwag's core insight |
 | **RACE-Middle** | Extract facts from a passage | Gen C (Comprehension) | Direct format match — passage + MC-4. Our distractors are "plausible, clearly incorrect based on the passage" — same as RACE-M's contradicted-by-text pattern |
-| **RACE-High** | Infer author intent and synthesize across a passage | Gen F (Instruct), Gen C (Comprehension) | Gen C tests "main idea, inference, vocabulary, supporting detail" — covers RACE-H question types. Gen F adds instruction-following depth |
+| **RACE-High** | Infer author intent and synthesize across a passage | Gen C (Comprehension) | Gen C tests "main idea, inference, vocabulary, supporting detail" — covers RACE-H question types |
+| **Winogrande** | Resolve an ambiguous pronoun/blank using commonsense | Gen F (Pronoun Resolution) | MC-2: sentence with `_` and two concrete entities; answer resolves via role/property/motivation/causality/ownership. Period-appropriate entities (farmer, miller, blacksmith, etc.) |
 | **Winogrande** | Resolve coreference via semantic understanding | None | No generator analog. Tests fundamental NLU from base pretraining. Serves purely as a catastrophic forgetting detector |
 | **MathQA** | Solve word problems with multi-step arithmetic | Gen D (Quantitative) | Both produce math word problems with step-by-step reasoning. Our distractors use "common arithmetic mistakes" — identical to MathQA's plausible-miscalculation pattern |
 | **GSM-MC** | Grade-school math reasoning (multi-step word problems) | Gen D (Quantitative) | Gen D trains the same skill: extract numbers from context, apply multi-step arithmetic, arrive at a numerical answer. GSM-MC covers basic operations; MathQA adds diversity (geometry, probability) |
