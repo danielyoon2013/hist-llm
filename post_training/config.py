@@ -127,16 +127,22 @@ GENERATOR_SPEC = {
     # pass_rate = empirically measured fraction of items that survive format_conversation()
     #             validation; docs_needed and the call cap are inflated by 1/pass_rate so
     #             that the per-slot target is met AFTER filtering.
+    # weight    = relative allocation per format slot (default 1.0). Lower weight = fewer
+    #             conversations from that generator. Used to dial down generators with
+    #             expensive pass rates or marginal benchmark contribution.
     # Gen A targets ARC-style grade-school science.
     # Open-Science-Pile = biology/geology/dredging research papers.
     # USPTO = patents covering circuits, materials, chemistry, mechanical principles
     # (broader topic coverage closer to ARC's physical/life/earth science mix).
-    "A": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": ["Open-Science-Pile", "USPTO"], "pass_rate": 0.95},
-    "B": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.95},
-    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True, "collections": None, "pass_rate": 0.90},
-    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.95},
-    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.85},
-    "F": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.62},
+    # Gen F at weight=0.6: Winogrande pass rate is 62%, so each Gen F conversation
+    # costs ~1.6x the API of other generators. Reducing weight redistributes budget
+    # to higher-yield generators (A/B/C/D/E).
+    "A": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": ["Open-Science-Pile", "USPTO"], "pass_rate": 0.95, "weight": 1.0},
+    "B": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.95, "weight": 1.0},
+    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True, "collections": None, "pass_rate": 0.90, "weight": 1.0},
+    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.95, "weight": 1.0},
+    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.85, "weight": 1.0},
+    "F": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.62, "weight": 0.6},
 }
 
 
@@ -161,32 +167,39 @@ def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
     if gen_keys is None:
         gen_keys = list(GENERATOR_SPEC.keys())
 
-    total_slots = sum(len(GENERATOR_SPEC[k]["formats"]) for k in gen_keys)
-    per_slot = target // total_slots
+    # Weighted slot allocation: each gen's share = weight × n_formats / total_weighted_slots.
+    # Default weight = 1.0; lower weight reduces a gen's allocation.
+    total_weighted_slots = sum(
+        GENERATOR_SPEC[k].get("weight", 1.0) * len(GENERATOR_SPEC[k]["formats"])
+        for k in gen_keys
+    )
 
     generators = {}
     for key in sorted(gen_keys):
         spec = GENERATOR_SPEC[key]
         n_fmts = len(spec["formats"])
         pass_rate = spec.get("pass_rate", 1.0)
-        gen_target = per_slot * n_fmts
+        weight = spec.get("weight", 1.0)
+        gen_target = int(target * (weight * n_fmts) / total_weighted_slots)
+        per_format = gen_target // n_fmts
         effective_target = int(gen_target / pass_rate) if pass_rate < 1.0 else gen_target
 
         entry = {
             "target": gen_target,
-            "per_format": per_slot,
+            "per_format": per_format,
             "pass_rate": pass_rate,
+            "weight": weight,
             "effective_target": effective_target,
         }
 
         if spec["corpus"]:
             items_per_doc = ITEMS_PER_CALL * CHUNKS_PER_DOC
-            effective_per_slot = int(per_slot / pass_rate) if pass_rate < 1.0 else per_slot
-            entry["docs_needed"] = -(-effective_per_slot // items_per_doc)
+            effective_per_format = int(per_format / pass_rate) if pass_rate < 1.0 else per_format
+            entry["docs_needed"] = -(-effective_per_format // items_per_doc)
         else:
             entry["docs_needed"] = None
-            effective_per_slot = int(per_slot / pass_rate) if pass_rate < 1.0 else per_slot
-            entry["api_calls"] = -(-effective_per_slot // ITEMS_PER_CALL)
+            effective_per_format = int(per_format / pass_rate) if pass_rate < 1.0 else per_format
+            entry["api_calls"] = -(-effective_per_format // ITEMS_PER_CALL)
 
         generators[key] = entry
 
