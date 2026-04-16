@@ -20,14 +20,77 @@ Rules:
 1. Questions must require analytical thinking, not just fact lookup
 2. Answers must be directly supported by the text
 3. Vary question types: cause-effect, comparison, analysis, inference, summary
-4. IMPORTANT — ADAPT TO CONTENT: If the text discusses science, engineering, medicine, or natural phenomena, create questions that test understanding of the UNDERLYING PRINCIPLE — like a grade-school science exam. Do NOT ask about what the author said or argued. Instead, ask about the science itself.
-   BAD (asks about the author): "What did Wilder argue about abnormal organisms?"
-   GOOD (asks about the science): "What biological process can cause two embryos to fuse into conjoined twins?"
-   BAD: "How did the report describe electricity generation?"
-   GOOD: "What form of energy does a coal-fired power plant convert into electricity?"
-   BAD: "What did the study conclude about soil erosion?"
-   GOOD: "Which natural process causes topsoil to be carried away by water?"
-   When the text is about politics, law, or history, ask analytical cause-effect reasoning questions as usual.
+4. CRITICAL — TEST THE GENERAL PRINCIPLE, NOT THE SPECIFIC SOURCE:
+   When the text discusses science, engineering, medicine, or natural phenomena, your questions MUST test understanding of the UNDERLYING SCIENTIFIC PRINCIPLE that any educated person could know — NOT the specific finding, person, location, or experimental detail mentioned in the source. Use the text only to identify the topic; then write a question about the general principle behind it. The reader of the question must NOT need to have read the source.
+
+   ABSOLUTELY FORBIDDEN PATTERNS (REJECT these — they are NOT acceptable):
+     - "What was the significance of [Person]'s work on X?" (asks about a researcher)
+     - "What did [Person] discover/argue/conclude about X?" (asks about a researcher)
+     - "According to [Source/Person/Report], how does X work?" (cites the source)
+     - "What effect does X have on Y, as discussed in [Document]?" (cites the source)
+     - "What conditions are necessary for X in [Specific Place]?" (over-specific to source)
+     - "How does the design of [Specific Building/Harbor/Machine] affect Y?" (over-specific case study)
+     - "What process is described in the text for X?" (refers to text)
+
+   REQUIRED PATTERN — direct grade-school-style questions about the principle:
+     SOURCE topic: Hofmeister's plant cell research → ASK: "What is the main function of the cell wall in plant cells?"
+     SOURCE topic: harbour silting at Ostend → ASK: "What natural process causes sediment to build up where rivers meet the sea?"
+     SOURCE topic: radium emanation experiments → ASK: "What type of particle does a radioactive element emit during decay?"
+     SOURCE topic: gyroscope demonstration by Thomson → ASK: "What property of a spinning object resists changes to its axis of rotation?"
+     SOURCE topic: alloying calcium → ASK: "What is the term for a mixture of two or more metals?"
+     SOURCE topic: simple retina formation → ASK: "Which part of the eye contains light-sensitive cells?"
+     SOURCE topic: littoral drift along sandy coasts → ASK: "What primarily moves sand along an ocean shoreline?"
+
+   The questions should read like 5th-8th grade science exam questions. Test concepts a curious 12-year-old should know — gravity, photosynthesis, evaporation, magnetism, simple circuits, plant biology, weather, rocks/minerals, cell structure, simple chemistry, light and sound, physical states of matter.
+
+   HARD REJECT — the question must test a SCIENTIFIC PRINCIPLE that exists in nature, not a historical, institutional, or methodological fact about science. REJECT and SKIP the question if it tests any of:
+     - History of science (when a discovery was made, who founded a field)
+     - Research methodology, publishing practices, peer review
+     - Education or institutional changes (universities adding botany, funding increases, curriculum changes)
+     - Engineering-specific case studies tied to a particular structure (this harbour, that dredging operation, this specific machine design) — unless it's testing a general physics principle that applies anywhere
+     - Sociology of scientists (collaboration patterns, scientific community trends)
+
+     BAD examples to REJECT:
+       - "After the mid-19th century, botanical literature shifted... what is a likely consequence?" (history of publishing)
+       - "A group of universities incorporates botany... what is the cause of this increase?" (education history)
+       - "A mail-steamer enters Flushing Harbour... what design flaw affects navigation?" (specific engineering case)
+       - "A dredging operation increases the depth of Portsmouth Harbour..." (specific engineering project)
+       - "A botanist studies isolated research papers... what impact on the community?" (research methodology)
+
+     GOOD examples to KEEP:
+       - "A river flows into the ocean and sediment builds up where freshwater meets saltwater. What process causes this?" (general geology)
+       - "A botanist observes plants exhibiting changes in characteristics over time. What process explains these variations?" (evolution principle)
+       - "A chemist combines potassium permanganate with oxalic acid. What is the role of cerium salts?" (chemistry principle)
+       - "A hot rock is dropped into cool water. Heat transfers by..." (physics principle)
+
+   If the source text only supports non-science questions (e.g., the chunk is purely about institutional history or a specific engineering case), generate fewer items rather than producing bad ones.
+
+   CRITICAL — USE SCENARIO FRAMING (not definition-style):
+   ARC-style science questions describe a CONCRETE SITUATION and ask the reader to APPLY knowledge to predict, infer, or explain what happens. They do NOT ask "what is X" or "what is the role of X" in the abstract. Always set up a scenario first, then ask the question.
+
+   GOOD scenario-based examples (this is what to produce):
+     "A hot rock is dropped into a pail of cool water. Heat energy is transferred from the rock to the water by:" → conduction
+     "A scientist categorized a rock as an extrusive igneous rock. Another scientist could accurately categorize the same rock as:" → volcanic
+     "A particular peach tree produces peaches that are more resistant to disease than other peaches. What method would reproduce these exact peaches?" → asexual reproduction
+     "A brand of fertilizer claims that it contains all the chemicals a plant needs for rapid growth. It may be inferred that the fertilizer includes all these ingredients except:" → carbohydrates
+     "Scientists studying a group of young sage grouse discovered a large percentage were infected with blood parasites. How will these blood parasites most likely affect the young birds?" → by decreasing the birds' overall health
+     "A student observes morning dew on grass but a dry sidewalk. Which process most likely caused the grass to be wet?" → condensation
+     "A blacksmith heats an iron horseshoe in a furnace, then drops it into a barrel of water. The water bubbles violently. What state change is the water undergoing?" → liquid to gas
+     "A farmer notices his crops grow taller on the south side of a hill than the north side. What environmental factor most likely accounts for this?" → more sunlight exposure
+
+   BAD definition-style (REJECT these — too abstract, unlike ARC):
+     "What is the main function of X?"
+     "What is the role of Y in process Z?"
+     "What process explains how plants do X?"
+     "What is the primary mechanism behind X?"
+
+   STRUCTURE: every question should have ONE of these scenario openers:
+     - "A [person/object] [does/has/observes] X. [Question about what happens, why, or what to infer]"
+     - "[An object/system] [is in some state]. [Question about cause, effect, or classification]"
+     - "After [an event], [some observation]. [Question about explanation]"
+     - "Given [a condition], which [property/process/outcome] is most likely?"
+
+   When the source is about politics, law, history, or other non-science: ask normal analytical cause-effect questions as usual.
 5. For each pair, provide 3 plausible but INCORRECT alternative answers as "distractors"
 6. CRITICAL — Keep answers SHORT: The correct answer and ALL distractors must be concise phrases (2-8 words each, like "a lightning strike" or "increased tariff revenue"). Do NOT write full sentences. Do NOT make the correct answer longer or more detailed than the distractors.
 7. Each question must include specific context so it is fully answerable on its own. BAD: "What happened during the battle?" GOOD: "What role did Commodore Tattnall play at the Battle of Taku Forts in 1859?"
@@ -44,11 +107,11 @@ Text:
 
 
 # ---------------------------------------------------------------------------
-# Generator B: Physical Commonsense (PIQA-style)
+# Generator B: Physical Commonsense (sensible-method selection)
 # Formats: MC-2, CoT
 # ---------------------------------------------------------------------------
 
-PIQA_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Use this text ONLY as inspiration for the time period and setting. Your task is to create {num_items} physical commonsense questions in the PIQA style.
+PHYSICAL_COMMONSENSE_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Use this text ONLY as inspiration for the time period and setting. Your task is to create {num_items} physical commonsense questions.
 
 GOAL: Test whether a reader understands how physical tasks actually work — which tool, action, sequence, or context is physically sensible, and which is absurd or inverted.
 
@@ -199,40 +262,89 @@ COMPLETION_PROMPT = """You are given text from a historical document published b
 
 The goal is to test SITUATIONAL COMPREHENSION — whether the reader can predict what a person does next in a real-world scene, based on common sense about how physical activities work.
 
-CRITICAL — You must create TWO types of questions (mix both types):
+CRITICAL — You must create TWO types of questions in roughly equal numbers (alternate between them):
 
-TYPE 1 — SCENE DESCRIPTIONS: Describe someone doing a physical activity, then ask what they do next.
-Example: "A farmer hitches his horse to the plow and begins working the field. After two hours, the horse slows and the farmer stops to let it rest."
-A: "He unhitches the horse and leads it to the water trough, then sits under a tree to eat his lunch." ← correct
-B: "He decides to ride the horse into town to attend a political rally at the courthouse."
-C: "He begins repainting the barn, carefully mixing the red paint in a large bucket."
-D: "He takes out a notebook and starts writing a letter to the newspaper editor."
+TYPE 1 — SHORT SCENE WITH TRAILING PRONOUN: A 1-2 sentence caption-style scene that ends with a pronoun ("he", "she", "they") or noun mid-thought, expecting completion. The CONTEXT must end mid-clause to be completed.
 
-TYPE 2 — HOW-TO INSTRUCTIONS: Write step-by-step instructions for a practical task, then ask what the next step is.
-Example: "How to preserve vegetables for winter. Step: Wash each canning jar thoroughly with hot water and soap. Inspect the rim for any cracks or chips that could prevent a proper seal."
-A: "Place the jars in a pot of boiling water for ten minutes to sterilize them completely." ← correct
-B: "Fill the jars with fresh flowers picked from the garden to decorate the kitchen."
-C: "Stack the jars in the cellar without drying them and cover with a blanket."
-D: "Use the jars to store buttons, coins, and other small household items."
+Example structure (use the FORMAT, but pick a topic from the source text — DO NOT copy this topic):
+  Context: "A young child sits on the parlor floor, building a tower of wooden blocks while her grandmother watches from the rocking chair. she"
+    A: "carefully balances another block on top, her tongue between her teeth in concentration." ← correct
+    B: "stands up and runs to the window to watch the streetcar pass."
+    C: "asks her grandmother to read aloud from the latest issue of Harper's."
+    D: "begins humming a song her mother taught her last week."
 
-Topics for both types:
-- Cooking, baking, canning, food preservation
-- Farming, planting, harvesting, animal care
-- Building, repairing, woodworking, metalwork
-- Cleaning, washing, sewing, household tasks
-- Shopping, trading, selling at a market
-- Traveling by train, horse, car, or ship
-- Manufacturing, factory work, machine operation
-- Sports, games, physical exercise
-- Medical care, first aid, treating injuries
+The context ENDS with a pronoun ("he", "she", "they") or noun ("the man", "the boy") with no period. The completions begin lowercase and continue the sentence. Keep the scene to 1-2 short sentences, NOT 3 elaborate ones. The TOPIC of the scene comes from the source text (not from this example).
+
+TYPE 2 — WIKIHOW-STYLE INSTRUCTIONS: Use the literal wikiHow markup format. Begin with [header], then [title] for each step, then [step] with the body text, ending mid-step or with [substeps] markers expecting completion.
+
+Example structure (use the FORMAT, but pick a topic from the source text — DO NOT copy this topic):
+  Context: "[header] How to soothe a child with a fever [title] Cool the body. [step] Wet a clean cloth in cool (not cold) water and wring it out so it does not drip. Place it gently on the child's forehead."
+    A: "[substeps] Replace the cloth every few minutes as it warms, and offer small sips of cool water if the child is thirsty enough to drink." ← correct
+    B: "[substeps] Use the cloth to scrub the kitchen counters before they begin to stain from the morning meal."
+    C: "[substeps] Hang the cloth on the line outdoors to dry in the sun before applying it again the next day."
+    D: "[substeps] Wrap the child in heavy wool blankets and place them next to the wood stove for warmth."
+
+The context MUST include `[header]`, `[title]`, `[step]` markers. The completions MUST continue the wikiHow format, often starting with `[substeps]` or another `[title]`. The TOPIC comes from the source text (not from this example).
+
+SOURCE-DRIVEN TOPIC SELECTION (CRITICAL — do not hardcode topics):
+
+Derive the topic of each question from the SOURCE TEXT you were given. Read what the source actually discusses — a person, an event, an object, a process, a place — and build the scene or how-to around that. The source is what makes the question period-grounded; do not invent generic scenes that ignore the source.
+
+VARY ACROSS LIFE DOMAINS (do not cluster around a few stereotypes):
+
+Across the {num_items} items in this call, AND across all calls, the questions should span DIFFERENT life domains. Examples of domains (use these as inspiration, NOT a topic checklist):
+  - Body and health (illness, injury, hygiene, posture, physical sensation)
+  - Relationships and social life (visiting, courting, conflict, helping, mourning)
+  - Mental and emotional states (worry, hope, decision-making, learning)
+  - Domestic life (any household activity — wide range)
+  - Work and trade (any occupation present in the source)
+  - Travel and movement (any mode of getting somewhere)
+  - Leisure and play (games, music, reading, gathering)
+  - Survival and care (food, warmth, shelter, child care)
+  - Civic and public life (markets, courts, gatherings, ceremonies)
+  - Skill and craft (any specialized practice)
+
+ANTI-STEREOTYPE RULE — REJECT and REGENERATE if the question is about:
+  - "A blacksmith" / "A farmer" / "A seamstress" / "A housewife baking" — these are OVER-USED stereotypes from prior generations. Pick something else.
+  - Generic "kneading dough", "harvesting corn", "canning fruit", "preserving vegetables" — these dominate our existing data. AVOID them unless the source text specifically discusses them.
+  - Default-to-common occupations of the period. If you find yourself writing "A farmer..." stop and ask: what else is in the source text? A schoolteacher? A telegraph clerk? A nurse? A child playing? A passenger on a streetcar? An audience member at a lecture? A mother soothing a sick infant? A clerk filing papers?
+
+The goal is broad domain coverage: questions should feel as different from each other as "How to recover from an emotional affair", "How to prune apple trees", "How to apply cologne", and "A man bends over into a pond. he". Reach for that range.
 
 Requirements:
-1. Create a SCENE showing someone doing a specific physical activity in 2-3 sentences. Then provide 4 possible continuations of what happens next.
-2. One completion must be the NATURAL NEXT STEP in the activity. The other three must describe unrelated actions.
-3. CRITICAL — LENGTH MATCHING: All four completions must be the SAME length (similar word count and sentence count). If the correct answer is 2 sentences, all wrong answers must also be 2 sentences. Do NOT make the correct answer longer or more detailed than the distractors.
-4. Wrong completions MUST shift to a completely DIFFERENT activity (not a variation of the same one).
-5. The scene must be SELF-CONTAINED — make sense on its own.
+1. Alternate between TYPE 1 (short scene with trailing pronoun) and TYPE 2 (wikiHow markup). Roughly half of items should use each type.
+2. For TYPE 1: scene is 1-2 sentences max, ending mid-thought with a pronoun. Each completion is 1-2 sentences. NO elaborate 3-sentence scenes.
+3. For TYPE 2: must include `[header]`, `[title]`, and `[step]` markers in the context. Completions must use `[substeps]` or additional `[title]` markers.
+
+4. CRITICAL — DISTRACTORS MUST TEST NARRATIVE COHERENCE, NOT TOPIC RECOGNITION.
+
+   This is the HARDEST requirement. All 4 completions must stay ON THE SAME TOPIC as the scene, but only ONE should be narratively consistent (correct cause-effect, correct physical sequence, correct timing). The other 3 must look plausible at first glance but BREAK narrative consistency in subtle ways:
+
+   (a) WRONG SEQUENCE: do a step before its prerequisites
+   (b) WRONG CAUSE-EFFECT: produce an illogical outcome from the action
+   (c) WRONG TIMING: skip ahead or jump back inappropriately
+   (d) CONTRADICTS SETUP: do something the scene already ruled out
+
+   GOOD example of HARD distractors (all stew-topic, only ONE coherent):
+   Scene: "A woman carefully stirs a large pot of bubbling stew over the wood stove. She"
+     A: leans in to taste the stew, adjusting the seasoning as needed. ← CORRECT (natural sequence: stir → taste → adjust)
+     B: pours the bubbling stew directly into the bread dough she has been kneading. ← wrong sequence (mixes incompatible processes)
+     C: sets the pot in the cellar to cool before lighting the fire under it. ← wrong cause-effect (cools then heats)
+     D: covers the pot with a wet cloth to put out the flame inside the broth. ← contradicts physics (broth doesn't burn)
+
+   BAD example of EASY distractors (different activities — REJECT this style):
+   Scene: "A woman stirs stew. She"
+     A: tastes and adjusts seasoning. ← CORRECT
+     B: kneads bread dough on the counter. ← off-topic (different activity)
+     C: hangs laundry outside on the line. ← off-topic
+     D: writes a letter to her sister. ← off-topic
+
+   The DIFFERENCE: HARD distractors stay in the cooking domain but break logic. EASY distractors switch to other domains. WE NEED HARD DISTRACTORS.
+
+5. CRITICAL — LENGTH MATCHING: All four completions must be the SAME length (similar word count and sentence count). Do NOT make the correct answer longer or more detailed than the distractors.
+
 6. CRITICAL — TEMPORAL CONSTRAINT: Use only tools, methods, and technology available during {start_year}-{end_year}. No computers, no plastic, no television, no microwave ovens. Use period-appropriate items: wood stoves, hand tools, horse-drawn carts, typewriters, telegraph, radio (if after 1920s).
+
 7. Each question must describe a DIFFERENT everyday activity.
 
 For each completion, provide step-by-step reasoning explaining why the correct completion is the natural next step and why the others don't fit.
@@ -245,92 +357,54 @@ Text:
 
 
 # ---------------------------------------------------------------------------
-# Generator F: Pronoun Resolution (Winogrande-style)
+# Generator F: Commonsense Reference (which entity fills the blank?)
 # Formats: MC-2, CoT
 # ---------------------------------------------------------------------------
 
-WINOGRANDE_PROMPT = """You are given text from a historical document published between {start_year} and {end_year}. Use this text ONLY as inspiration for the time period, entities, and register. Your task is to create {num_items} pronoun-resolution questions in the Winogrande style.
+COMMONSENSE_REFERENCE_PROMPT = """You are given a passage from a historical document published between {start_year} and {end_year}. Use the passage as inspiration for entities, register, and setting. Create {num_items} pronoun-resolution items.
 
-GOAL: Test whether a reader can resolve an ambiguous pronoun or blank in a single sentence using COMMONSENSE reasoning about the two named entities — not grammatical agreement or surface cues.
+CORE PRINCIPLE
+Each item is one prose sentence (or two short sentences) containing TWO concrete entities and ONE blank "_". The blank must be resolvable ONLY through real-world commonsense about those entities — not grammar, not surface cues, not statistics. Both entities must be plausible fillers on surface reading; the answer turns on knowledge of how the world actually works (roles, physical properties, motivations, causality, ownership).
 
-FORMAT of each item:
-- ONE sentence (10-25 words) that names exactly TWO distinct entities and contains exactly ONE blank marked with a single underscore "_"
-- Both entities must be CONCRETE actors or objects. Do NOT use abstract nouns (the law, the court, the case, justice, duty, honor, the verdict, the truth, tax laws, civil liberties) as one of the two fillers.
-- Two candidate fillers: the TWO entities that are named in the sentence.
+HARD CONSTRAINTS
+1. Both fillers must appear verbatim (with or without "the"/"a") in the sentence. Never invent names that aren't in the sentence.
+2. Both entities must be CONCRETE (people, animals, tools, places, vehicles, materials). Reject abstract nouns like "the law", "duty", "honor".
+3. Reject one-way inferences where one filler is impossible by definition (e.g., "doctor treated patient. The _ was ill" — patient is ill by definition).
+4. Reject items where gender pronouns or grammatical agreement leak the answer.
+5. Period-appropriate entities and vocabulary only. No post-{end_year} concepts.
 
-HARD RULE #1 — FILLERS MUST APPEAR IN THE SENTENCE:
-Both option_a and option_b MUST be phrases that appear verbatim in the sentence (with or without the leading article "the" / "a"). If you want to use a name like "Elmer", the name must appear in the sentence; do NOT invent entity names from the source document that are not present in the sentence you wrote. Before emitting an item, check: can I highlight option_a inside the sentence? Can I highlight option_b inside the sentence? If the answer to either is no, REJECT and regenerate.
+SENTENCE-FORM VARIETY (CRITICAL)
+DO NOT default to "because _". Vary the connective across items. Use any of:
+- declarative two-sentence form: "<setup>. The _ <attribute>."
+- comma continuation: "<setup>, _ <action/state>."
+- "so _", "but _", "but the _", "as _", "since _", "while _", "because _"
 
-  GOOD: "Leon Breaux invited Freddie Delaune into his auto because _ wanted to enjoy a ride."
-        Fillers: "Leon Breaux", "Freddie Delaune" — both appear in the sentence. ✓
-  BAD:  "The mother relied on her son because _ contributed to her expenses."
-        Fillers: "Elmer", "Freddie" — NEITHER appears in the sentence. ✗
+The choice of pattern should fit the relationship being tested, not be uniform.
 
-HARD RULE #2 — GENUINE AMBIGUITY (BOTH READINGS SURFACE-PLAUSIBLE):
-Both option_a and option_b must be plausible candidates for the blank on pure surface reading. A reader who knows ONLY the words of the sentence (no background commonsense) should be UNABLE to decide which filler is correct. Only commonsense about roles, physical properties, motivations, causality, or ownership should break the tie.
+COMMONSENSE ANCHORS (vary across items)
+Each item resolves on one of: professional role / physical property / motivation / causality / ownership / temporal sequence.
 
-  REJECT these patterns (one-way surface inference):
-  - "The DA argued against X because _ was violating the law." — By definition, DAs prosecute violators; the distractor is impossible by role, not ambiguous.
-  - "The lion chased the rabbit because _ was a predator." — "Predator" is a definitional property of a lion; distractor is impossible by category.
-  - "The judge ruled against the defendant because _ had broken the law." — Judges rule ON behavior; defendants are accused of breaking laws. One-way role.
-  - "The doctor treated the patient because _ was ill." — "Patient" means ill by definition.
+VERIFICATION (every item)
+Before emitting, check each filler against the sentence: does the reading make surface sense? Does it make commonsense sense? Set `correct` only when one reading is commonsense-correct AND the other is commonsense-wrong but surface-plausible. If both readings are equally valid OR one is surface-impossible, regenerate.
 
-  ACCEPT these patterns (genuinely ambiguous on surface, commonsense breaks the tie):
-  - "The trophy did not fit in the suitcase because _ was too big." — Trophy OR suitcase could plausibly be "too big"; commonsense about containers tells us the trophy is the one exceeding the suitcase's size.
-  - "The farmer sold his corn to the miller because _ needed to grind it into flour." — Either could "need to grind"; commonsense about the miller's trade tells us it's the miller.
-  - "The iron anvil would not fit on the wooden workbench because _ was too heavy." — Either could be "too heavy"; commonsense about iron vs wood tells us it's the anvil.
+DIVERSITY WITHIN A CALL
+Different entity pair per item. Different commonsense anchor per item. Different sentence pattern per item. Roughly balanced A/B as the correct answer.
 
-MANDATORY VERIFICATION STEP — before finalizing each item, you MUST fill two fields:
-  `fillers_in_sentence`: "option_a appears in sentence: YES/NO. option_b appears in sentence: YES/NO."
-  `verification`: two lines
-    "If option_a fills the blank: <one-sentence judgment: does this reading make surface sense? does it make commonsense sense?>"
-    "If option_b fills the blank: <one-sentence judgment: does this reading make surface sense? does it make commonsense sense?>"
-Then set `correct` to the letter whose reading is commonsense-correct.
-REJECT and regenerate if:
-  - either filler's "appears in sentence" answer is NO
-  - one reading is already implausible on pure surface reading (violation of HARD RULE #2)
-  - both readings seem equally commonsense-valid (no clear answer)
+ONE FULL SHAPE EXAMPLE (illustrates structure — DO NOT copy the topic):
+{{
+  "sentence": "Maria had to bend down to walk through the cellar door but barely tilted her head to enter the attic doorway. The _ is shorter.",
+  "option_a": "cellar door",
+  "option_b": "attic doorway",
+  "fillers_in_sentence": "option_a appears in sentence: YES. option_b appears in sentence: YES.",
+  "verification": "If cellar door: surface sense YES, commonsense YES (bending = much shorter opening). If attic doorway: surface sense YES, commonsense NO (only a head tilt suggests a near-normal-height opening).",
+  "correct": "A",
+  "anchor": "physical_property",
+  "reasoning": "Greater body adjustment (bending) implies a much shorter opening; minor adjustment (head tilt) implies a roughly head-height opening."
+}}
 
-GOOD example (commonsense anchor = professional role):
-  Sentence: "The farmer sold his corn to the miller because _ needed to grind it into flour."
-  Option A: "the farmer"   Option B: "the miller"   Correct: B
-  Reasoning: Grinding grain is the miller's trade; the farmer grows grain but does not operate a mill.
+Return JSON: {{"winogrande_items": [<item>, <item>, ...]}}
 
-GOOD example (commonsense anchor = physical property):
-  Sentence: "The iron anvil would not fit on the wooden workbench because _ was too heavy."
-  Option A: "the anvil"   Option B: "the workbench"   Correct: A
-  Reasoning: Iron is denser than wood; the anvil is the heavy object that exceeds the bench's capacity.
-
-BAD examples (DO NOT generate these patterns):
-  - Gendered pronoun that gives it away: "Mary asked John because she needed help."
-  - Grammatically impossible alternative: one filler is plural/singular mismatch with the verb
-  - Obvious by surface meaning alone: "The lion chased the rabbit because _ was a predator."
-
-CRITICAL — COMMONSENSE ANCHOR:
-Rotate across these anchor types — use a DIFFERENT one for each of the {num_items} items:
-  (a) Professional role / expertise: which entity performs the named trade/action
-  (b) Physical property (comparative): size, weight, hardness, speed, temperature
-  (c) Motivation / intention: which entity has the reason to act
-  (d) Causality: which entity produced the state or outcome
-  (e) Ownership / possession: which entity owns or controls the object in question
-
-CRITICAL — TEMPORAL CONSTRAINT:
-Use only entities, roles, and objects from the {start_year}-{end_year} period. Period-appropriate entities: farmer, miller, blacksmith, merchant, sailor, judge, clerk, doctor, soldier, weaver, tailor, butcher, printer, carpenter, stonemason, apothecary, telegraph operator, newspaper editor, coachman, stable hand, factory worker, factory owner, clergyman, schoolmaster, fisherman, innkeeper. No post-{end_year} roles (no programmer, pilot before 1910, televisions, computers).
-
-CRITICAL — DIVERSITY WITHIN CALL:
-Each of the {num_items} items MUST use a DIFFERENT entity pair and a DIFFERENT commonsense anchor. Do NOT reuse "farmer/miller" or the same role pairing in more than one item. Vary whether the correct answer is A or B — do not put the correct answer in the same slot for every item.
-
-CRITICAL — FORMATTING:
-- The sentence must contain exactly one "_" (a single underscore).
-- Each option_a and option_b must match a phrase that actually appears in the sentence (with or without the leading article "the").
-- Do NOT use personal pronouns (he, she, it, they) as the blank — use "_".
-- Keep the sentence natural, period-register prose (not stilted).
-
-Return a JSON object with key "winogrande_items". The first item demonstrates anchor (a); cycle through (a)→(b)→(c)→(d)→(e) across items:
-
-{{"winogrande_items": [{{"sentence": "The farmer sold his corn to the miller because _ needed to grind it into flour.", "option_a": "the farmer", "option_b": "the miller", "fillers_in_sentence": "option_a appears in sentence: YES. option_b appears in sentence: YES.", "verification": "If the farmer fills the blank: surface sense YES (farmer is an animate actor who could 'need' something); commonsense sense NO (farmers grow grain, they do not mill it). If the miller fills the blank: surface sense YES; commonsense sense YES (millers run mills that grind grain).", "correct": "B", "anchor": "professional_role", "reasoning": "Step 1: The sentence describes a transaction: farmer sells corn, miller receives it.\\nStep 2: The blank refers to whoever needs to grind corn into flour.\\nStep 3: Grinding grain into flour is the defining work of a miller.\\nStep 4: Farmers grow grain but rarely mill it themselves.\\nStep 5: Therefore the miller is the one who needed to grind the corn."}}, {{"sentence": "The iron anvil would not fit on the wooden workbench because _ was too heavy.", "option_a": "the anvil", "option_b": "the workbench", "fillers_in_sentence": "option_a appears in sentence: YES. option_b appears in sentence: YES.", "verification": "If the anvil fills the blank: surface sense YES (both are objects that can have weight); commonsense sense YES (iron anvils are dense and heavy). If the workbench fills the blank: surface sense YES; commonsense sense NO (a wooden workbench is lighter than an iron anvil).", "correct": "A", "anchor": "physical_property", "reasoning": "Step 1: The sentence compares an iron anvil and a wooden workbench.\\nStep 2: The blank refers to whichever object's weight causes the fit problem.\\nStep 3: Iron is far denser than wood; a blacksmith's anvil typically weighs over 100 pounds.\\nStep 4: A workbench is designed to support tools; its weight is not the limiting factor.\\nStep 5: Therefore the anvil is the heavy object."}}]}}
-
-Text:
+Source passage:
 {text}"""
 
 

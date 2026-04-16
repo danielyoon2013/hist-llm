@@ -4,7 +4,7 @@ from src.post_training.generators.base import (
     BaseGenerator, FORMAT_MC2, FORMAT_COT,
     render_mc, make_mc_choices,
 )
-from src.post_training.generators.prompts import PIQA_PROMPT
+from src.post_training.generators.prompts import PHYSICAL_COMMONSENSE_PROMPT
 
 
 class GenBCoT(BaseGenerator):
@@ -13,7 +13,7 @@ class GenBCoT(BaseGenerator):
     name = "gen_b_cot"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return PIQA_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
+        return PHYSICAL_COMMONSENSE_PROMPT.format(num_items=self.items_per_chunk, text=chunk,
                                   start_year=start_year, end_year=end_year)
 
     def parse_response(self, response):

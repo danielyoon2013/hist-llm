@@ -331,8 +331,7 @@ def assemble(period, source=None, test_ratio=DEFAULT_TEST_RATIO,
 
             if doc in test_docs:
                 if fmt in MC_FORMATS:
-                    from src.post_training.generators.base import MC4_LETTERS, MC2_LETTERS
-                    letters = list(MC2_LETTERS) if fmt in MC2_FORMATS else list(MC4_LETTERS)
+                    letters = ["A", "B"] if fmt in MC2_FORMATS else ["A", "B", "C", "D"]
                     entry = {
                         "messages": messages,
                         "letters": letters,

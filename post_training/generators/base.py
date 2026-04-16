@@ -44,25 +44,6 @@ FORMAT_COT = "cot"                # Chain-of-thought with <think> tags
 
 MAX_PASSAGE_LENGTH = 2000  # Truncate passages for passage-based formats
 
-# ---------------------------------------------------------------------------
-# MC letter schemes (chosen from rare English letters to reduce positional bias)
-# ---------------------------------------------------------------------------
-# MC-4 uses Q/X/Z/J (English frequency ~0.07-0.15% each)
-# MC-2 uses K/V (~0.8-1.0% each)
-# These replace A/B/C/D to mitigate the small-model A-bias documented in
-# Zheng et al. 2024 (ICLR). See also: letter frequency table below.
-MC4_LETTERS = ("Q", "X", "Z", "J")
-MC2_LETTERS = ("K", "V")
-
-
-def mc_letters(num_choices: int) -> tuple:
-    """Return the letter tuple for a given MC arity."""
-    if num_choices == 2:
-        return MC2_LETTERS
-    if num_choices == 4:
-        return MC4_LETTERS
-    raise ValueError(f"Unsupported num_choices={num_choices}")
-
 
 # ---------------------------------------------------------------------------
 # OCR text cleaning
@@ -117,7 +98,7 @@ def make_mc_choices(correct, distractors, num_choices=4, position_idx=None):
     wrong = list(distractors[:num_choices - 1])
     target_pos = position_idx % num_choices if position_idx is not None else 0
     pool = wrong[:target_pos] + [correct] + wrong[target_pos:]
-    letters = mc_letters(len(pool))
+    letters = tuple("ABCD"[:len(pool)])
     correct_letter = letters[target_pos]
     return letters, pool, correct_letter
 
@@ -137,13 +118,19 @@ def truncate_passage(text, max_len=MAX_PASSAGE_LENGTH):
 # Shared utilities
 # ---------------------------------------------------------------------------
 
-def chunk_text(text, chunk_size=6000, overlap=300):
-    """Split text into overlapping chunks."""
+def chunk_text(text, chunk_size=6000, overlap=300, max_chunks_per_doc=3):
+    """Split text into overlapping chunks.
+
+    Args:
+        max_chunks_per_doc: Cap on chunks per document. Prevents long docs
+            (e.g. 250-chunk OpenAlex papers) from dominating the training set.
+            Default 3 distributes generation across more unique source docs.
+    """
     if len(text) <= chunk_size:
         return [text]
     chunks = []
     start = 0
-    while start < len(text):
+    while start < len(text) and len(chunks) < max_chunks_per_doc:
         end = min(start + chunk_size, len(text))
         chunks.append(text[start:end])
         if end >= len(text):

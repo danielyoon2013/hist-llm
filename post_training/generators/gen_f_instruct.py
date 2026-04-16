@@ -4,7 +4,7 @@ from src.post_training.generators.base import (
     BaseGenerator, FORMAT_MC2, FORMAT_COT,
     render_mc, make_mc_choices,
 )
-from src.post_training.generators.prompts import WINOGRANDE_PROMPT
+from src.post_training.generators.prompts import COMMONSENSE_REFERENCE_PROMPT
 
 
 class GenFInstruct(BaseGenerator):
@@ -13,7 +13,7 @@ class GenFInstruct(BaseGenerator):
     name = "gen_f_instruct"
 
     def build_prompt(self, chunk, period, start_year, end_year):
-        return WINOGRANDE_PROMPT.format(
+        return COMMONSENSE_REFERENCE_PROMPT.format(
             num_items=self.items_per_chunk, text=chunk,
             start_year=start_year, end_year=end_year,
         )
@@ -53,7 +53,7 @@ class GenFInstruct(BaseGenerator):
                 correct_filler, [distractor], num_choices=2,
                 position_idx=next(self._mc_counters[fmt]),
             )
-            user_msg = render_mc(sentence, letters, choices)
+            user_msg = render_mc(f"Fill in the blank: {sentence}", letters, choices)
             return [
                 {"role": "user", "content": user_msg},
                 {"role": "assistant", "content": correct},
@@ -64,7 +64,7 @@ class GenFInstruct(BaseGenerator):
                 return None
             content = f"<think>\n{reasoning}\n</think>\n{correct_filler}"
             return [
-                {"role": "user", "content": sentence},
+                {"role": "user", "content": f"Fill in the blank: {sentence}"},
                 {"role": "assistant", "content": content},
             ]
 
