@@ -1,19 +1,14 @@
 """
-Prompt templates for synthetic data generators (A-F).
+Prompt templates for synthetic data generators (A-G).
 
-All six prompts follow a unified schema for readability and paper-appendix
-presentation:
+Generators A-F follow a unified schema:
+  GOAL / FORMAT / CORE PRINCIPLES / CONSTRAINTS / REJECT IF / SHAPE EXAMPLE / OUTPUT
 
-  GOAL            — one-two sentence description of what the generator tests
-  FORMAT          — structural requirements (what an item looks like)
-  CORE PRINCIPLES — what makes a good item
-  CONSTRAINTS     — hard rules (temporal, length, diversity, etc.)
-  REJECT IF       — anti-patterns with brief reasons
-  SHAPE EXAMPLE   — one representative item illustrating structure
-  OUTPUT          — JSON return format
-
-The schema is identical across generators; only the content differs. This
-lets reviewers compare designs directly without parsing six different layouts.
+Generator G (rephrase) reproduces the FinePhrase Appendix B prompts verbatim
+(Niklaus et al. 2025, huggingface/finephrase prompts/format/*.md), prepended
+with a temporal preamble specific to the 1900-1949 historical corpus. Each
+G format is its own prompt invoked as a separate API call (plain-text output,
+no JSON wrapping, no word caps, no topic field).
 """
 
 # ---------------------------------------------------------------------------
@@ -610,3 +605,63 @@ IMPORTANT: The "passage" field must be IDENTICAL across all items — write it o
 
 Source text:
 {text}"""
+
+
+# ---------------------------------------------------------------------------
+# Generator G: Multi-format rephrasing (FinePhrase Appendix B reproduction)
+# Formats: rephrase_tutorial, rephrase_faq, rephrase_narrative, rephrase_explanation
+#
+# Each format is invoked as a SEPARATE API call per chunk. Plain-text output
+# (not JSON). No topic field, no word caps — matches FinePhrase paper verbatim.
+# Prompt bodies are verbatim from huggingface/finephrase prompts/format/*.md;
+# only the temporal preamble (period constraint) is our addition.
+# ---------------------------------------------------------------------------
+
+_REPHRASE_PREAMBLE = """You are given a passage from a historical document published between {start_year} and {end_year}. Use only vocabulary and references appropriate to {start_year}-{end_year} and do not introduce any knowledge, events, or terminology from after {end_year}.
+
+The rewrite must stand on its own as a complete piece of prose. Do NOT reference "the passage", "the document", "the text", "this source", or any similar meta-reference to the input — a reader with no access to the original must be able to understand your output fully."""
+
+
+REPHRASE_TUTORIAL_PROMPT = _REPHRASE_PREAMBLE + """
+
+Rewrite the document as a clear, step-by-step tutorial or instructional guide. Use numbered steps or bullet points where appropriate to enhance clarity. Preserve all essential information while ensuring the style feels didactic and easy to follow. Output only the tutorial, nothing else.
+
+Document:
+{text}
+"""
+
+
+REPHRASE_FAQ_PROMPT = _REPHRASE_PREAMBLE + """
+
+Rewrite the document as a comprehensive FAQ (Frequently Asked Questions). Extract or infer the key questions a reader would have about this topic, then provide clear, direct answers. Order questions logically — from foundational to advanced, or by topic area. Each answer should be self-contained and understandable without reference to other answers. Ensure the FAQ works as a standalone document. Output only the FAQ, nothing else.
+
+Document:
+{text}
+"""
+
+
+REPHRASE_NARRATIVE_PROMPT = _REPHRASE_PREAMBLE + """
+
+Rewrite the document as a clear narrative that emphasizes the temporal sequence and causal relationships between events or steps. Reorganize the content to show how actions, events, or situations naturally flow from one to the next, making cause-and-effect relationships explicit. If describing a process or activity, show the logical progression of steps and explain why each step follows from the previous one. Output only the narrative, nothing else.
+
+Document:
+{text}
+"""
+
+
+REPHRASE_EXPLANATION_PROMPT = _REPHRASE_PREAMBLE + """
+
+Rewrite the document to provide clear scientific or logical explanations for concepts, phenomena, or processes mentioned in the text. Make implicit reasoning explicit by explaining why things work the way they do, what principles or mechanisms are at play, and how different factors relate to each other. Focus on building understanding through causal explanations rather than just describing facts. Output only the explanatory text, nothing else.
+
+Document:
+{text}
+"""
+
+
+REPHRASE_MATH_PROMPT = _REPHRASE_PREAMBLE + """
+
+Rewrite the document to create a mathematical word problem based on the numerical data or relationships in the text. Provide a step-by-step solution that shows the calculation process clearly. Create a problem that requires multi-step reasoning and basic arithmetic operations. It should include the question followed by a detailed solution showing each calculation step. Output only the problem and solution, nothing else.
+
+Document:
+{text}
+"""

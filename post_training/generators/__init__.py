@@ -9,6 +9,7 @@ def get_generator_registry():
     from src.post_training.generators.gen_d_quantitative import GenDQuantitative
     from src.post_training.generators.gen_e_completion import GenECompletion
     from src.post_training.generators.gen_f_instruct import GenFInstruct
+    from src.post_training.generators.gen_g_rephrase import GenGRephrase
 
     return {
         "A": GenAFactual,
@@ -17,4 +18,5 @@ def get_generator_registry():
         "D": GenDQuantitative,
         "E": GenECompletion,
         "F": GenFInstruct,
+        "G": GenGRephrase,
     }

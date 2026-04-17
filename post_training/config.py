@@ -130,19 +130,27 @@ GENERATOR_SPEC = {
     # weight    = relative allocation per format slot (default 1.0). Lower weight = fewer
     #             conversations from that generator. Used to dial down generators with
     #             expensive pass rates or marginal benchmark contribution.
+    # tasks_per_chunk = number of separate API calls each source chunk expands into.
+    #             Default 1. Gen G uses 4 (one per rephrase format).
     # Gen A targets ARC-style grade-school science.
     # Open-Science-Pile = biology/geology/dredging research papers.
     # USPTO = patents covering circuits, materials, chemistry, mechanical principles
     # (broader topic coverage closer to ARC's physical/life/earth science mix).
     # Gen F at weight=0.6: Winogrande pass rate is 62%, so each Gen F conversation
     # costs ~1.6x the API of other generators. Reducing weight redistributes budget
-    # to higher-yield generators (A/B/C/D/E).
-    "A": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": ["Open-Science-Pile", "USPTO"], "pass_rate": 0.95, "weight": 1.0},
-    "B": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.95, "weight": 1.0},
-    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True, "collections": None, "pass_rate": 0.90, "weight": 1.0},
-    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.95, "weight": 1.0},
-    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.85, "weight": 1.0},
-    "F": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.62, "weight": 0.6},
+    # to higher-yield generators (A/B/C/D/E/G).
+    # Gen D at weight=0.6: GSM-MC is at random without CoT inference; heavy Gen D
+    # allocation without the inference-harness fix won't move the needle.
+    # Gen G at weight=2.0 (~29% of budget): FinePhrase Appendix B reproduction.
+    # Targets HellaSwag/Winogrande/RACE via fluent generative prose.
+    "A": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": ["Open-Science-Pile", "USPTO"], "pass_rate": 0.95, "weight": 1.0, "tasks_per_chunk": 1},
+    "B": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.95, "weight": 1.0, "tasks_per_chunk": 1},
+    "C": {"formats": ("mc4_passage", "open", "cot"), "corpus": True, "collections": None, "pass_rate": 0.90, "weight": 1.0, "tasks_per_chunk": 1},
+    "D": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.95, "weight": 0.6, "tasks_per_chunk": 1},
+    "E": {"formats": ("mc4", "open", "cot"),         "corpus": True, "collections": None, "pass_rate": 0.85, "weight": 1.0, "tasks_per_chunk": 1},
+    "F": {"formats": ("mc2", "cot"),                 "corpus": True, "collections": None, "pass_rate": 0.62, "weight": 0.6, "tasks_per_chunk": 1},
+    "G": {"formats": ("rephrase_tutorial", "rephrase_faq", "rephrase_narrative", "rephrase_explanation", "rephrase_math"),
+          "corpus": True, "collections": None, "pass_rate": 0.85, "weight": 2.0, "tasks_per_chunk": 5},
 }
 
 
@@ -193,13 +201,24 @@ def compute_plan(target=DEFAULT_TARGET, gen_keys=None):
         }
 
         if spec["corpus"]:
-            items_per_doc = ITEMS_PER_CALL * CHUNKS_PER_DOC
+            # Conversations per doc per format slot depends on the generator's
+            # task shape. Default: one call per chunk produces ITEMS_PER_CALL items,
+            # each rendered into ALL formats → ITEMS_PER_CALL convs per format slot per chunk.
+            # Gen G style (tasks_per_chunk > 1): each call produces 1 item in 1 format →
+            # 1 conv per format slot per chunk (per-format across tasks_per_chunk calls).
+            tasks_per_chunk = spec.get("tasks_per_chunk", 1)
+            if tasks_per_chunk > 1:
+                convs_per_doc_per_format = CHUNKS_PER_DOC  # 1 item per call × CHUNKS_PER_DOC chunks
+            else:
+                convs_per_doc_per_format = ITEMS_PER_CALL * CHUNKS_PER_DOC
             effective_per_format = int(per_format / pass_rate) if pass_rate < 1.0 else per_format
-            entry["docs_needed"] = -(-effective_per_format // items_per_doc)
+            entry["docs_needed"] = -(-effective_per_format // convs_per_doc_per_format)
+            entry["tasks_per_chunk"] = tasks_per_chunk
         else:
             entry["docs_needed"] = None
             effective_per_format = int(per_format / pass_rate) if pass_rate < 1.0 else per_format
             entry["api_calls"] = -(-effective_per_format // ITEMS_PER_CALL)
+            entry["tasks_per_chunk"] = 1
 
         generators[key] = entry
 

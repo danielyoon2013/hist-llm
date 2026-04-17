@@ -139,18 +139,25 @@ def chunk_text(text, chunk_size=6000, overlap=300, max_chunks_per_doc=3):
     return chunks
 
 
-def call_api(client, prompt, model=MODEL, max_tokens=4096, temperature=0.7):
-    """Call OpenAI API with retry logic. Returns parsed JSON dict or None."""
+def call_api(client, prompt, model=MODEL, max_tokens=4096, temperature=0.7, plaintext=False):
+    """Call OpenAI API with retry logic.
+
+    Returns parsed JSON dict by default, or a plain string when plaintext=True
+    (used for Gen G rephrase prompts that produce raw text, not JSON).
+    """
     for attempt in range(MAX_RETRIES):
         try:
-            response = client.chat.completions.create(
+            kwargs = dict(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-            return json.loads(response.choices[0].message.content)
+            if not plaintext:
+                kwargs["response_format"] = {"type": "json_object"}
+            response = client.chat.completions.create(**kwargs)
+            content = response.choices[0].message.content
+            return content if plaintext else json.loads(content)
         except Exception as e:
             if attempt < MAX_RETRIES - 1:
                 wait = RETRY_BASE_DELAY * (attempt + 1)
@@ -214,6 +221,26 @@ class BaseGenerator(ABC):
             List of {role, content} dicts, or None if format not applicable.
         """
         ...
+
+    def expand_chunk_to_tasks(self, chunk, period, start_year, end_year):
+        """Expand a chunk into one or more (format_key, prompt) pairs.
+
+        Default: one task per chunk using build_prompt(). format_key=None means
+        "render the response into all SUPPORTED_FORMATS".
+
+        Override in generators like Gen G where each chunk needs SEPARATE API
+        calls per format (plain-text prompts, no JSON bundling). Return a list
+        of (format_key, prompt_text) pairs; when format_key is set, the
+        response is rendered ONLY into that format.
+        """
+        return [(None, self.build_prompt(chunk, period, start_year, end_year))]
+
+    def is_plaintext_format(self, fmt):
+        """Whether responses for this format are plain text (not JSON).
+
+        Override in generators that need plain-text parsing (e.g. Gen G rephrase).
+        """
+        return False
 
     def run(self, period, collections=None, max_workers=50, max_docs=None,
             chunk_size=6000, overlap=300, target_examples=None, action="run"):
@@ -290,17 +317,27 @@ class BaseGenerator(ABC):
             print("No documents found!")
             return None
 
-        # Build task list
+        # Build task list. Each chunk may expand into multiple tasks (e.g. Gen G
+        # produces 4 tasks per chunk, one per rephrase format).
         tasks = []
         for doc_name, text in docs:
             chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
             for i, chunk in enumerate(chunks):
-                tasks.append((client, doc_name, i, chunk, period, start_year, end_year))
+                for fmt_key, prompt_text in self.expand_chunk_to_tasks(
+                    chunk, period, start_year, end_year
+                ):
+                    tasks.append((client, doc_name, i, chunk, prompt_text, fmt_key,
+                                  period, start_year, end_year))
 
-        # Cap tasks to match target (each call → ITEMS_PER_CALL items × num_formats convs)
+        # Cap tasks to match target. Each task produces:
+        #   - (ITEMS_PER_CALL items) × (num_formats convs) if fmt_key=None (default)
+        #   - exactly 1 conversation if fmt_key is set (Gen G: one format per task)
         if target_examples:
             from src.post_training.config import ITEMS_PER_CALL
-            max_calls = target_examples // (ITEMS_PER_CALL * len(self.SUPPORTED_FORMATS))
+            if any(t[5] is not None for t in tasks):  # any task has a fmt_key → Gen G style
+                max_calls = target_examples  # one conversation per task
+            else:
+                max_calls = target_examples // (ITEMS_PER_CALL * len(self.SUPPORTED_FORMATS))
             if len(tasks) > max_calls:
                 print(f"Capping tasks: {len(tasks):,} -> {max_calls:,} (target: {target_examples:,})")
                 tasks = tasks[:max_calls]
@@ -355,23 +392,31 @@ class BaseGenerator(ABC):
         return output_paths
 
     def _process_task(self, task):
-        """Process a single chunk. Returns {fmt: [conversations]}.
+        """Process a single task. Returns {fmt: [conversations]}.
+
+        Task tuple: (client, doc_name, chunk_idx, chunk, prompt, fmt_key,
+                     period, start_year, end_year)
+
+        When fmt_key is None (default): render response into ALL SUPPORTED_FORMATS.
+        When fmt_key is set (Gen G): render response only into that specific format.
 
         Each conversation is wrapped with metadata for document-level splitting:
         {"messages": [...], "doc_name": ..., "chunk_idx": ..., "generator": ..., "format": ...}
         """
-        client, doc_name, chunk_idx, chunk, period, start_year, end_year = task
+        client, doc_name, chunk_idx, chunk, prompt, fmt_key, period, start_year, end_year = task
 
-        prompt = self.build_prompt(chunk, period, start_year, end_year)
-        response = call_api(client, prompt, model=self.model)
+        plaintext = fmt_key is not None and self.is_plaintext_format(fmt_key)
+        response = call_api(client, prompt, model=self.model, plaintext=plaintext)
 
         if response is None:
             return {}
 
         items = self.parse_response(response)
         results = {}
+        # If fmt_key is set, only render into that one format. Else iterate all formats.
+        target_formats = (fmt_key,) if fmt_key is not None else self.SUPPORTED_FORMATS
         for item in items:
-            for fmt in self.SUPPORTED_FORMATS:
+            for fmt in target_formats:
                 conv = self.format_conversation(item, fmt, source_chunk=chunk)
                 if conv is None:
                     continue
@@ -465,7 +510,9 @@ class BaseGenerator(ABC):
         batch_dir = paths["batch_temp_dir"]
         os.makedirs(batch_dir, exist_ok=True)
 
-        # Build task list: [(custom_id, prompt_str, chunk_text_or_None), ...]
+        # Build task list. Each chunk may expand into multiple tasks (e.g. Gen G
+        # produces one task per rephrase format). Task tuple shape:
+        #   (custom_id, prompt, chunk_text, doc_name, chunk_idx, fmt_key)
         if self.needs_corpus:
             docs = self._load_documents(paths, collections, max_docs)
             if not docs:
@@ -475,9 +522,16 @@ class BaseGenerator(ABC):
             for doc_idx, (doc_name, text) in enumerate(docs):
                 chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
                 for chunk_idx, chk in enumerate(chunks):
-                    cid = f"{self.name}_{doc_idx}_{chunk_idx}"
-                    prompt = self.build_prompt(chk, period, start_year, end_year)
-                    tasks.append((cid, prompt, chk, doc_name, chunk_idx))
+                    for task_num, (fmt_key, prompt) in enumerate(
+                        self.expand_chunk_to_tasks(chk, period, start_year, end_year)
+                    ):
+                        # Encode task_num (format slot) into custom_id when fmt_key is set,
+                        # so each format's response gets its own custom_id.
+                        if fmt_key is None:
+                            cid = f"{self.name}_{doc_idx}_{chunk_idx}"
+                        else:
+                            cid = f"{self.name}_{doc_idx}_{chunk_idx}_{fmt_key}"
+                        tasks.append((cid, prompt, chk, doc_name, chunk_idx, fmt_key))
         else:
             tasks = self._build_metadata_tasks(
                 period, start_year, end_year, target_examples,
@@ -490,7 +544,11 @@ class BaseGenerator(ABC):
         # Cap tasks to match target
         if target_examples and self.needs_corpus:
             from src.post_training.config import ITEMS_PER_CALL
-            max_calls = target_examples // (ITEMS_PER_CALL * len(self.SUPPORTED_FORMATS))
+            any_fmt_key = len(tasks[0]) >= 6 and tasks[0][5] is not None
+            if any_fmt_key:
+                max_calls = target_examples  # one conversation per task
+            else:
+                max_calls = target_examples // (ITEMS_PER_CALL * len(self.SUPPORTED_FORMATS))
             if len(tasks) > max_calls:
                 print(f"Capping tasks: {len(tasks):,} -> {max_calls:,} (target: {target_examples:,})")
                 tasks = tasks[:max_calls]
@@ -498,7 +556,7 @@ class BaseGenerator(ABC):
         total = len(tasks)
         print(f"Submitting {total:,} batch requests")
 
-        # Write manifest (custom_id -> chunk/doc metadata)
+        # Write manifest (custom_id -> chunk/doc metadata + optional fmt_key)
         manifest_path = batch_dir / f"{self.name}_manifest.jsonl"
         with open(manifest_path, "w", encoding="utf-8") as f:
             for task_tuple in tasks:
@@ -507,23 +565,31 @@ class BaseGenerator(ABC):
                 entry = {"custom_id": cid}
                 if chunk_val is not None:
                     entry["chunk_text"] = chunk_val
-                # Corpus tasks have (cid, prompt, chunk, doc_name, chunk_idx)
+                # Corpus tasks: (cid, prompt, chunk, doc_name, chunk_idx, fmt_key)
                 if len(task_tuple) >= 5:
                     entry["doc_name"] = task_tuple[3]
                     entry["chunk_idx"] = task_tuple[4]
+                if len(task_tuple) >= 6 and task_tuple[5] is not None:
+                    entry["fmt_key"] = task_tuple[5]
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        # Build request dicts
+        # Build request dicts. Gen G requests use plaintext (no response_format)
+        # since the rephrase prompts return raw text. Everything else uses JSON.
         requests = []
         for task_tuple in tasks:
             cid, prompt = task_tuple[0], task_tuple[1]
-            requests.append({
+            fmt_key = task_tuple[5] if len(task_tuple) >= 6 else None
+            plaintext = fmt_key is not None and self.is_plaintext_format(fmt_key)
+            req = {
                 "custom_id": cid,
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 4096,
                 "temperature": 0.7,
-            })
+            }
+            if not plaintext:
+                req["response_format"] = {"type": "json_object"}
+            requests.append(req)
 
         # Split by serialized byte size (OpenAI gpt-4o-mini limit: 200MB per file)
         # Target 180MB per chunk to leave safety margin.
@@ -641,6 +707,7 @@ class BaseGenerator(ABC):
                         "chunk_text": entry.get("chunk_text"),
                         "doc_name": entry.get("doc_name", "unknown"),
                         "chunk_idx": entry.get("chunk_idx", 0),
+                        "fmt_key": entry.get("fmt_key"),  # Gen G: one format per task
                     }
 
         # Build output paths
@@ -658,20 +725,31 @@ class BaseGenerator(ABC):
         parsed_fail = 0
 
         for custom_id, response_body in results:
-            try:
-                response = json.loads(response_body)
-            except json.JSONDecodeError:
-                parsed_fail += 1
-                continue
-
-            items = self.parse_response(response)
             meta = manifest.get(custom_id, {})
+            fmt_key = meta.get("fmt_key") if isinstance(meta, dict) else None
+
+            # Plain-text responses (Gen G rephrase): don't try to parse as JSON;
+            # the response body IS the text payload. Wrap it as a single item.
+            if fmt_key is not None and self.is_plaintext_format(fmt_key):
+                # response_body is the raw assistant text from the batch result
+                items = [{"text": response_body.strip() if isinstance(response_body, str) else ""}]
+            else:
+                try:
+                    response = json.loads(response_body)
+                except json.JSONDecodeError:
+                    parsed_fail += 1
+                    continue
+                items = self.parse_response(response)
+
             chunk_val = meta.get("chunk_text") if isinstance(meta, dict) else meta
+
+            # If fmt_key is set (Gen G), render only into that format.
+            target_formats = (fmt_key,) if fmt_key is not None else self.SUPPORTED_FORMATS
 
             for item in items:
                 if not isinstance(item, dict):
                     continue
-                for fmt in self.SUPPORTED_FORMATS:
+                for fmt in target_formats:
                     conv = self.format_conversation(item, fmt, source_chunk=chunk_val)
                     if conv is None:
                         continue

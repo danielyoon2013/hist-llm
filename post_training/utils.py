@@ -104,8 +104,13 @@ def create_batch_request_file(requests, output_path):
                 "model": req.get("model", MODEL),
                 "messages": req["messages"],
                 "max_tokens": req.get("max_tokens", 256),
-                "response_format": {"type": "json_object"},
             }
+            # Only attach response_format when the request asks for it.
+            # Gen G rephrase prompts are plain-text and do not include "json" in
+            # their message, which would trigger an OpenAI validation error
+            # ("'messages' must contain the word 'json' in some form").
+            if "response_format" in req:
+                body["response_format"] = req["response_format"]
             if "temperature" in req:
                 body["temperature"] = req["temperature"]
             line = {
