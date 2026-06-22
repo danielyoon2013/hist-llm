@@ -24,6 +24,7 @@ Analysis periods (6 non-overlapping, historically meaningful eras):
 To change analysis periods, modify PERIOD_RANGES below.
 """
 
+import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -31,8 +32,18 @@ from tqdm import tqdm
 
 # --- CONFIG ---
 CLASSIFIED_DIR = Path(r"D:\hist_LLM\corpus\classified")
+ALL_CLASSIFIED_DIR = Path(r"D:\hist_LLM\corpus\classified_all")  # all-docs audit output
 OUTPUT_DIR = Path(r"D:\hist_LLM\processing\quality_graphs")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# 25-year periods (the granularity of the Ridge quality models)
+PERIODS_25YR = [
+    (1678, 1700, "1678_1700"), (1701, 1725, "1701_1725"), (1726, 1750, "1726_1750"),
+    (1751, 1775, "1751_1775"), (1776, 1800, "1776_1800"), (1801, 1825, "1801_1825"),
+    (1826, 1850, "1826_1850"), (1851, 1875, "1851_1875"), (1876, 1900, "1876_1900"),
+    (1901, 1925, "1901_1925"), (1926, 1950, "1926_1950"), (1951, 1975, "1951_1975"),
+    (1976, 2000, "1976_2000"), (2001, 2023, "2001_2023"),
+]
 
 THRESHOLD = 20_000_000_000  # 20 billion tokens
 
@@ -125,6 +136,81 @@ def create_cumulative_plot(period_name: str, df: pd.DataFrame):
     }
 
 
+# ---------------------------------------------------------------------------
+# Expected-quality report over ALL docs (audit of the hardcoded heuristic filter)
+# Reads the all-docs scores (classified_all/) and summarizes expected quality per
+# period, split into kept vs dropped. Writes a NEW csv; never touches the cutoff
+# logic or period_summary.csv above.
+# ---------------------------------------------------------------------------
+
+def _load_period_all(input_dir: Path, start_year: int, end_year: int) -> pd.DataFrame:
+    """Load classified_{year}.parquet for a period from an arbitrary input dir."""
+    dfs = []
+    for year in range(start_year, end_year + 1):
+        path = input_dir / f"classified_{year}.parquet"
+        if path.exists():
+            dfs.append(pd.read_parquet(path))
+    if not dfs:
+        return None
+    df = pd.concat(dfs, ignore_index=True)
+    # classified_all has is_clean (True/False); be robust if a file lacks it
+    if 'is_clean' not in df.columns:
+        df['is_clean'] = True
+    df['token_count'] = df['token_count'].fillna(0)
+    return df
+
+
+def _tok_weighted(d: pd.DataFrame) -> float:
+    t = d['token_count'].sum()
+    return float((d['predicted_quality'] * d['token_count']).sum() / t) if t > 0 else float('nan')
+
+
+def expected_quality_report(input_dir: Path, period_ranges: list, output_csv: Path):
+    """Expected quality over ALL docs per period, split kept vs dropped."""
+    rows = []
+    for start, end, name in tqdm(period_ranges, desc=f"Expected-quality ({output_csv.name})"):
+        df = _load_period_all(input_dir, start, end)
+        if df is None or len(df) == 0:
+            print(f"  [SKIP] {name}: no data in {input_dir}")
+            continue
+        kept = df[df['is_clean']]
+        drop = df[~df['is_clean']]
+        kmed = kept['predicted_quality'].median() if len(kept) else float('nan')
+        pct_above = (100 * (drop['predicted_quality'] > kmed).mean()
+                     if len(drop) and len(kept) else float('nan'))
+        rows.append({
+            'period': name,
+            'total_docs': len(df),
+            'total_tokens': int(df['token_count'].sum()),
+            'kept_frac_docs_pct': round(100 * len(kept) / len(df), 2),
+            'mean_quality_all': round(df['predicted_quality'].mean(), 4),
+            'tokwt_quality_all': round(_tok_weighted(df), 4),
+            'kept_docs': len(kept),
+            'kept_mean_quality': round(kept['predicted_quality'].mean(), 4) if len(kept) else None,
+            'kept_tokwt_quality': round(_tok_weighted(kept), 4) if len(kept) else None,
+            'dropped_docs': len(drop),
+            'dropped_tokens': int(drop['token_count'].sum()),
+            'dropped_mean_quality': round(drop['predicted_quality'].mean(), 4) if len(drop) else None,
+            'dropped_tokwt_quality': round(_tok_weighted(drop), 4) if len(drop) else None,
+            'pct_dropped_above_kept_median': round(pct_above, 2) if pct_above == pct_above else None,
+        })
+        print(f"  {name}: {len(df):,} docs | all mean q={df['predicted_quality'].mean():.2f} "
+              f"(kept {kept['predicted_quality'].mean():.2f} vs dropped {drop['predicted_quality'].mean():.2f}) "
+              f"| {pct_above:.0f}% of dropped >= kept-median")
+    out = pd.DataFrame(rows)
+    out.to_csv(output_csv, index=False)
+    print(f"\nExpected-quality summary saved to: {output_csv}")
+    print("NOTE: Ridge was trained on CLEAN docs only; scores on the dropped/garbage "
+          "tail are out-of-distribution (indicative, not calibrated).")
+    return out
+
+
+def run_expected_quality(input_dir: Path):
+    """Emit expected-quality summaries at both 6-era and 25-yr granularity."""
+    expected_quality_report(input_dir, PERIOD_RANGES, OUTPUT_DIR / 'expected_quality_all.csv')
+    expected_quality_report(input_dir, PERIODS_25YR, OUTPUT_DIR / 'expected_quality_all_25yr.csv')
+
+
 def main():
     print("Creating cumulative token graphs for each period...")
 
@@ -157,4 +243,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Quality-cutoff plots, or expected-quality audit report")
+    parser.add_argument('--expected-quality', action='store_true',
+                        help='Report expected quality over ALL docs (kept vs dropped) from classified_all/; '
+                             'writes expected_quality_all*.csv. Does not touch the cutoff/plot path.')
+    parser.add_argument('--input-dir', type=str, default=str(ALL_CLASSIFIED_DIR),
+                        help='Input dir of classified_{year}.parquet for --expected-quality')
+    args = parser.parse_args()
+
+    if args.expected_quality:
+        run_expected_quality(Path(args.input_dir))
+    else:
+        main()

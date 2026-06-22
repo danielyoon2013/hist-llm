@@ -43,9 +43,15 @@ STAGING_DIR = Path(r"D:\hist_LLM\processing\staging")
 
 # Target shard size (~250M characters)
 SHARD_SIZE_CHARS = 250_000_000
-# Row group size for parquet files (must be >= num_gpus for DDP distribution)
-# Matches nanochat's repackage_data_reference.py
-ROW_GROUP_SIZE = 1024
+# Row group size (rows per row group) for parquet files.
+# nanochat's DDP dataloader strides ROW GROUPS across ranks (rg_idx = ddp_rank,
+# then += world_size), so each shard must have at least NUM_GPUS *row groups* or
+# the high-numbered ranks get no data and training HANGS. The constraint is on
+# the *number of groups per shard*, not the rows per group: with row_group_size
+# too large, a large-document period (e.g. 1678_1849, ~39k chars/doc) packs only
+# ~7000 docs into a 250M-char shard => 7 row groups < 8 GPUs. 128 keeps even the
+# smallest remainder shard well above 8 row groups for up to 8-way DDP.
+ROW_GROUP_SIZE = 128
 # Parallel file reads within each year (saturates NVMe SSD I/O queues)
 FILE_READ_WORKERS = 16
 
