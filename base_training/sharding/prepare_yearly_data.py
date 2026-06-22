@@ -28,7 +28,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pathlib import Path
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 # Reuse the proven helpers/constants from prepare_base_data.py
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -96,22 +96,24 @@ class YearSharder:
         return self.nshards
 
 
-def process_year(year, cap, tok_writer_texts, val_texts):
-    """Select + shard one year. Returns manifest dict or None if no data."""
+def process_year(year, cap, read_workers=FILE_READ_WORKERS):
+    """Select + shard one year. Writes its shards + tok_{year}.parquet (unique names, so
+    workers don't conflict). Returns (manifest_dict_or_None, val_texts_list)."""
+    np.random.seed(42 + int(year))  # deterministic within-shard shuffle, distinct per year
     sel = select_top_ids(year, cap)
     if sel is None:
-        print(f"  [SKIP] {year}: no classified_all data"); return None
+        print(f"  [SKIP] {year}: no classified_all data", flush=True); return None, []
     id_set, tokens_used, n_docs, cutoff_q, total = sel
 
     year_dir = RAW_DIR / str(year)
     files = sorted(year_dir.glob("*.parquet")) if year_dir.exists() else []
     if not files:
-        print(f"  [SKIP] {year}: no raw text"); return None
+        print(f"  [SKIP] {year}: no raw text", flush=True); return None, []
 
     sharder = YearSharder(year, DATA_DIR)
-    tok_chars = 0; val_count = 0
+    tok_texts = []; tok_chars = 0; val_texts = []; val_count = 0
     args = [(f, id_set) for f in files]
-    with ThreadPoolExecutor(max_workers=FILE_READ_WORKERS) as ex:
+    with ThreadPoolExecutor(max_workers=read_workers) as ex:
         for texts in ex.map(_read_matching_texts, args):
             sharder.add(texts)
             # sample for tokenizer (year-balanced) and val (small) without a 2nd pass
@@ -119,16 +121,23 @@ def process_year(year, cap, tok_writer_texts, val_texts):
                 if not t:
                     continue
                 if tok_chars < TOK_CHARS_PER_YEAR:
-                    tok_writer_texts.append(t); tok_chars += len(t)
+                    tok_texts.append(t); tok_chars += len(t)
                 if val_count < VAL_DOCS_PER_YEAR:
                     val_texts.append(t); val_count += 1
             del texts
     n_shards = sharder.close()
+    write_sample_shards(TOK_DIR, tok_texts, f"tok_{year}")  # worker-local, unique name
     gc.collect()
     print(f"  {year}: {n_docs:,} docs, {tokens_used/1e6:.0f}M tok "
-          f"(avail {total/1e6:.0f}M), cutoff_q={cutoff_q:.3f}, {n_shards} shards")
+          f"(avail {total/1e6:.0f}M), cutoff_q={cutoff_q:.3f}, {n_shards} shards", flush=True)
     return dict(year=year, n_docs=n_docs, tokens_used=tokens_used, total_tokens=total,
-                cutoff_quality=round(cutoff_q, 4), n_shards=n_shards)
+                cutoff_quality=round(cutoff_q, 4), n_shards=n_shards), val_texts
+
+
+def _worker(arg):
+    """Top-level worker for ProcessPoolExecutor (must be picklable/importable)."""
+    year, cap, read_workers = arg
+    return process_year(year, cap, read_workers)
 
 
 def write_sample_shards(out_dir: Path, texts: list, prefix: str, row_group_size=ROW_GROUP_SIZE):
@@ -146,6 +155,8 @@ def main():
     ap.add_argument("--end", type=int, default=END_YEAR)
     ap.add_argument("--years", type=str, default=None, help="comma-sep subset for testing")
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP, help="tokens per year cap")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="parallel YEAR workers (ProcessPool). USB-SSD bound, 4-6 is a good range.")
     args = ap.parse_args()
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -154,14 +165,20 @@ def main():
              else list(range(args.start, args.end + 1)))
 
     rows, val_texts = [], []
-    np.random.seed(42)
-    for y in tqdm(years, desc="Years"):
-        tok_texts = []  # per-year tokenizer sample (year-balanced)
-        r = process_year(y, args.cap, tok_texts, val_texts)
-        if r is None:
-            continue
-        write_sample_shards(TOK_DIR, tok_texts, f"tok_{y}")
-        rows.append(r)
+    if args.workers > 1:
+        # split the per-year read threads across workers so we don't oversubscribe the disk
+        rpw = max(2, FILE_READ_WORKERS // args.workers)
+        print(f"Parallel: {args.workers} year-workers x {rpw} read-threads", flush=True)
+        tasks = [(y, args.cap, rpw) for y in years]
+        with ProcessPoolExecutor(max_workers=args.workers) as ex:
+            for d, v in ex.map(_worker, tasks):
+                if d is not None:
+                    rows.append(d); val_texts.extend(v)
+    else:
+        for y in tqdm(years, desc="Years"):
+            d, v = process_year(y, args.cap)
+            if d is not None:
+                rows.append(d); val_texts.extend(v)
 
     # held-out val shard: name sorts AFTER all shard_{year}_* so it becomes the val split.
     # The val loader also strides row groups across ranks, so it needs >= num_gpus row
